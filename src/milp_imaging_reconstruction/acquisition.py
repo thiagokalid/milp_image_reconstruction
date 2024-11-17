@@ -1,5 +1,5 @@
-from reflector_grid import ReflectorGrid
-from transducer import Transducer
+from .reflector_grid import ReflectorGrid
+from .transducer import Transducer
 
 import numpy as np
 
