@@ -1,13 +1,14 @@
 #%% md
 # ## Import das bibliotecas:
 #%%
-from acquisition import Acquisition
-from reflector_grid import ReflectorGrid
-from transducer import Transducer
-from imaging import *
+from src.milp_image_reconstruction.acquisition import Acquisition
+from src.milp_image_reconstruction.reflector_grid import ReflectorGrid
+from src.milp_image_reconstruction.transducer import Transducer
+from src.milp_image_reconstruction.imaging import *
 
 import matplotlib.pyplot as plt
 import matplotlib
+import time
 matplotlib.use("QtAgg")
 
 #%% Input de dados:
@@ -42,26 +43,46 @@ signal_size = len(sampled_signal)
 
 #
 imgsize = reflector_grid.get_imgsize()
-img = passarin_method(
+
+t0 = time.time()
+img_proposed = l1_method(
     np.reshape(acq.fmc_basis, newshape=(signal_size, reflector_grid.get_numpxs())),
     sampled_signal,
     reflector_grid.get_imgsize()
 )
+t_proposed = time.time() - t0
 
+t0 = time.time()
+img_reference = passarin_method(
+    np.reshape(acq.fmc_basis, newshape=(signal_size, reflector_grid.get_numpxs())),
+    sampled_signal,
+    reflector_grid.get_imgsize()
+)
+t_reference = time.time() - t0
 #%% Display dos resultados:
 
-img_norm = img - img.min() / (img.max() - img.min()) + 1e-9
-img_db = 20 * np.log10(img_norm)
+#%% Display dos resultados:
+convert_to_db = lambda img: 20 * np.log10(img - img.min() / (img.max() - img.min()) + 1e-9)
 
 offset = (reflector_grid.xres/2, reflector_grid.zres/2)
 
-plt.figure()
-plt.imshow(img_db, extent=reflector_grid.get_extent(offset=offset), aspect='equal', vmin=-20, vmax=-6.8)
+plt.subplot(1,2,1)
+plt.suptitle("Image in dB")
+plt.imshow(convert_to_db(img_proposed), extent=reflector_grid.get_extent(offset=offset), aspect='equal', vmin=-20, vmax=-6.8)
 plt.plot(*reflector_grid.get_coords(), "xb", alpha=.5, label="Reflectors grid")
 plt.plot(xr, zr, 'or', label='Target reflector')
 plt.xlabel("x-axis in mm")
 plt.ylabel("y-axis in mm")
-plt.title("Image in dB")
+plt.title(f"Runtime = {t_proposed:.2f} s")
+plt.legend()
+
+plt.subplot(1,2,2)
+plt.imshow(convert_to_db(img_reference), extent=reflector_grid.get_extent(offset=offset), aspect='equal', vmin=-20, vmax=-6.8)
+plt.plot(*reflector_grid.get_coords(), "xb", alpha=.5, label="Reflectors grid")
+plt.plot(xr, zr, 'or', label='Target reflector')
+plt.xlabel("x-axis in mm")
+plt.ylabel("y-axis in mm")
+plt.title(f"Runtime = {t_reference:.2f} s")
 plt.colorbar()
 plt.legend()
 plt.show()
