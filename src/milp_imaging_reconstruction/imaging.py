@@ -2,7 +2,7 @@ import numpy as np
 import scipy
 import scipy.sparse.linalg as linalg
 
-from acquisition import Acquisition
+from .acquisition import Acquisition
 
 from scipy.optimize import milp
 
