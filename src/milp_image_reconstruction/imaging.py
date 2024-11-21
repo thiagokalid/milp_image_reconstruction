@@ -38,13 +38,15 @@ def l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tup
     c = np.ones(shape=(2*N + M, 1))
     c[:M] = 0
 
+
     #
-    ei_matrix = np.identity(N)
+    ei_matrix = scipy.sparse.eye_array(N, N, format='csr')
+    z_matrix = scipy.sparse.csc_array((N, N))
 
     # A is 2N x (M + 2N)
-    A = np.vstack([
-        np.hstack((H, ei_matrix, np.zeros_like(ei_matrix))),
-        np.hstack((-H, np.zeros_like(ei_matrix), ei_matrix))
+    A = scipy.sparse.vstack([
+        scipy.sparse.hstack((H, ei_matrix, z_matrix)),
+        scipy.sparse.hstack((-H, z_matrix, ei_matrix))
     ])
 
     b_l = np.vstack((
