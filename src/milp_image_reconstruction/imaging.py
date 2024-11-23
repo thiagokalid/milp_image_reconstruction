@@ -5,7 +5,19 @@ import scipy.sparse.linalg as linalg
 from .acquisition import Acquisition
 
 from scipy.optimize import milp
+def transform_dense_to_sparse_array(dense_signal, epsilon = 1e-2):
+    sparse_signal = np.zeros_like(dense_signal)
+    non_zero = np.power(dense_signal, 2) > np.power(epsilon, 2)
+    sparse_signal[non_zero] = dense_signal[non_zero]
+    sparse_signal = scipy.sparse.csc_array(sparse_signal)
+    return sparse_signal
 
+def transform_dense_to_sparse_matrix(dense_signal, epsilon = 1e-2):
+    sparse_signal = np.zeros_like(dense_signal)
+    non_zero = np.power(dense_signal, 2) > np.power(epsilon, 2)
+    sparse_signal[non_zero] = dense_signal[non_zero]
+    sparse_signal = scipy.sparse.csc_array(sparse_signal)
+    return sparse_signal
 
 def passarin_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tuple):
     A = basis_signal
@@ -32,7 +44,9 @@ def naive_l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsiz
 def l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tuple):
     N, M = basis_signal.shape
     g = sampled_signal.reshape(N, 1)
+    g = transform_dense_to_sparse_array(g)
     H = basis_signal
+    H = transform_dense_to_sparse_matrix(H)
 
     # c^T @ x
     c = np.ones(shape=(2*N + M, 1))
@@ -40,7 +54,7 @@ def l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tup
 
 
     #
-    ei_matrix = scipy.sparse.eye_array(N, N, format='csr')
+    ei_matrix = scipy.sparse.eye_array(N, N, format='csc')
     z_matrix = scipy.sparse.csc_array((N, N))
 
     # A is 2N x (M + 2N)
@@ -50,8 +64,8 @@ def l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tup
     ])
 
     b_l = np.vstack((
-        g,
-        -g
+        g.toarray(),
+        -g.toarray()
     ))
 
     b_u = np.ones_like(b_l)
