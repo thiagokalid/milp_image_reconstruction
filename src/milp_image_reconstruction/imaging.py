@@ -19,12 +19,13 @@ def transform_dense_to_sparse_matrix(dense_signal, epsilon = 1e-2):
     sparse_signal = scipy.sparse.csc_array(sparse_signal)
     return sparse_signal
 
-def passarin_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tuple):
+def passarin_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tuple, damp=0):
     A = basis_signal
     b = sampled_signal
-    x = linalg.lsqr(A, b)[0]
+    x = linalg.lsqr(A, b, damp=damp)[0]
     img = np.reshape(x, newshape=imgsize)
-    return img.T
+    residue = b - A@x
+    return img.T, b - A@x
 
 
 def naive_l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tuple):
@@ -70,7 +71,8 @@ def l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tup
 
     b_u = np.ones_like(b_l)
 
-    constraints = scipy.optimize.LinearConstraint(A, b_l[:, 0], b_u[:, 0])
+    constraints = scipy.optimize.LinearConstraint(A, b_l[:, 0])
     result = scipy.optimize.milp(c=c[:, 0], constraints=constraints)
     img = np.reshape(result.x[:M], newshape=imgsize)
-    return img.T
+    residue = result.x[M:]
+    return img.T, residue
