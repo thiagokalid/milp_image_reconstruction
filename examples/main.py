@@ -35,8 +35,8 @@ acq = Acquisition(cp, fs, gate_start, gate_end, reflector_grid, transducer)
 # %% Aplicação do método de reconstrução de imagem:
 
 # Localização do refletor que deseja-se reconstruir em mm:
-xr = [-1.25]
-zr = [3]
+xr = [-1.25, 2.5, 0.75]
+zr = [3.4, 6, 3]
 
 sampled_fmc = None
 for xi, zi in zip(xr, zr):
@@ -63,11 +63,16 @@ t_proposed = time.time() - t0
 print("L1 end.")
 
 print("L2 begin.")
+epsilon = 1e-1
+lbd = 10
 t0 = time.time()
 img_reference, l2_residue = irls_method(
     np.reshape(acq.fmc_basis, newshape=(signal_size, reflector_grid.get_numpxs())),
     sampled_signal,
-    reflector_grid.get_imgsize()
+    reflector_grid.get_imgsize(),
+    lbd=lbd,
+    epsilon=epsilon,
+    maxiter=100
 )
 t_reference = time.time() - t0
 print("L2 end.")
@@ -84,6 +89,7 @@ img_reference_db = convert_to_db(img_reference)
 vmin = np.min([img_reference_db])
 vmax = np.max([img_reference_db])
 
+plt.figure()
 plt.subplot(2, 2, 1)
 plt.suptitle("Image in dB")
 plt.imshow(img_proposed_db, extent=reflector_grid.get_extent(offset=offset), aspect='equal', vmin=vmin, vmax=vmax)
@@ -93,9 +99,10 @@ plt.xlabel("x-axis in mm")
 plt.ylabel("y-axis in mm")
 plt.title(f"Runtime = {t_proposed:.2f} s")
 plt.colorbar()
-plt.legend()
+plt.legend(loc="upper center")
 
 ax = plt.subplot(2, 2, 3)
+plt.title(f"SSE = {np.sum(np.power(l1_residue, 2)):.2e}")
 ax.hist(l1_residue, bins=100, density=False)
 
 plt.subplot(2, 2, 2)
@@ -104,11 +111,13 @@ plt.plot(*reflector_grid.get_coords(), "xb", alpha=.5, label="Reflectors grid")
 plt.plot(xr, zr, 'or', label='Target reflector')
 plt.xlabel("x-axis in mm")
 plt.ylabel("y-axis in mm")
-plt.title(f"Runtime = {t_reference:.2f} s")
+plt.title(fr"IRLS Runtime = {t_reference:.2f} s. $\lambda={lbd:.2E}$, $\epsilon={epsilon:.2E}$")
 plt.colorbar()
-plt.legend()
+plt.legend(loc="upper center")
 
 ax = plt.subplot(2, 2, 4)
+plt.title(f"SSE = {np.sum(np.power(l2_residue, 2)):.2e}")
 ax.hist(l2_residue, bins=100, density=False)
 
 plt.show()
+plt.tight_layout()

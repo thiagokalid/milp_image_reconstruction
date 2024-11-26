@@ -82,7 +82,7 @@ def l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tup
     return img.T, residue
 
 
-def IRLSCG(A, B, maxiter, xguess, lbd=10, tolLower=1e-2, epsilon=.01):
+def IRLSCG(A, B, maxiter, xguess, lbd=1e-4, tolLower=1e-2, epsilon=1e-4):
     '''
 		Itera no maximo maxiter vezes o IRLSCG.
 			Lembrando, queremos estimar a solução para A = Bx.
@@ -114,10 +114,10 @@ def IRLSCG(A, B, maxiter, xguess, lbd=10, tolLower=1e-2, epsilon=.01):
     return f1, B - A @ f1
 
 
-def irls_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tuple, damp=0):
+def irls_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tuple, maxiter=100, tolLower=1e-2, epsilon=1e-4, lbd=1e-4):
     A = basis_signal
     b = sampled_signal
     xguess = linalg.lsqr(A, b)[0]
-    x, residue = IRLSCG(A, b, maxiter=100, xguess=xguess)
-    img = np.reshape(x, shape=imgsize)
+    x, residue = IRLSCG(A, b, maxiter=maxiter, xguess=xguess, tolLower=tolLower, epsilon=epsilon, lbd=lbd)
+    img = np.reshape(x, newshape=imgsize)
     return img.T, residue
