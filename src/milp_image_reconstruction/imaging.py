@@ -28,7 +28,7 @@ def passarin_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsiz
     A = basis_signal
     b = sampled_signal
     x = linalg.lsqr(A, b, damp=damp)[0]
-    img = np.reshape(x, shape=imgsize)
+    img = np.reshape(x, newshape=imgsize)
     residue = b - A @ x
     return img.T, b - A @ x
 
@@ -79,6 +79,7 @@ def l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tup
     result = scipy.optimize.milp(c=c[:, 0], constraints=constraints)
     img = np.reshape(result.x[:M], newshape=imgsize)
     residue = result.x[M:]
+    residue[-N:] *= -1
     return img.T, residue
 
 
