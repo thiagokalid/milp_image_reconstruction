@@ -83,7 +83,7 @@ def l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tup
     return img.T, residue
 
 
-def IRLSCG(A, B, maxiter, xguess, lbd=1e-4, tolLower=1e-2, epsilon=1e-4):
+def IRLSCG(A, B, maxiter, xguess, lbd, tolLower, epsilon):
     '''
 		Itera no maximo maxiter vezes o IRLSCG.
 			Lembrando, queremos estimar a solução para A = Bx.
@@ -95,27 +95,46 @@ def IRLSCG(A, B, maxiter, xguess, lbd=1e-4, tolLower=1e-2, epsilon=1e-4):
 			epsilon <= valor que ajuda na aproximação f(x)=x para f(x) = f1(x)=sqrt(x^2+epsilon)
 			com o objetivo de tornar f(x) diferenciavel
 		'''
-    N = A.shape[1]
-    W = np.zeros(shape=(N, N))
 
-    f = np.zeros(N)
     f0 = np.sqrt(xguess ** 2 + epsilon)
-    #a = conjgrad(H.T@H+d*W, H.T@g, f[:,0])
-    minTol = np.zeros(maxiter + 1)
-    f1 = None
+    err = np.sqrt((B - A @ xguess)**2 + epsilon)
+    deltax = np.zeros_like(xguess)
 
     for k in range(maxiter):
-        W = np.diag(f0 ** (-1))
-        f1 = linalg.lsqr(A.T @ A + lbd * W, A.T @ B)[0]
+        # Weighted factor considering (p - 2)/2:
+        W1 = np.diag(np.sqrt(err) ** (-1))
+        W2 = np.diag(np.sqrt(f0) ** (-1))
+
+        # Step:
+        A1 = W1 @ A
+        err1 = W1 @ err
+
+        # Solve A1 @ x = err1:
+        deltax = linalg.lsqr(
+            A1.T @ A1,
+            A1.T @ err1,
+            atol=1e-3
+        )[0]
+
+        #
+        f1 = f0 + deltax
+
+        # Delta
         ek = (np.linalg.norm(f1 - f0, 2) / np.linalg.norm(f0, 2)) ** 2
+
+        # Absolute function approximation: |x| ≃ sqrt(x² + epsilon)
         f0 = np.sqrt(f1 ** 2 + epsilon)
-        if (ek < tolLower):
+        err = np.sqrt((B - A @ f1)**2 + epsilon)
+
+        if ek < tolLower:
             return f0, B - A @ f0
+        print("K=",k)
+        print(f"ek={ek:.4f}")
     print("Not converged.")
     return f1, B - A @ f1
 
 
-def irls_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tuple, maxiter=100, tolLower=1e-2, epsilon=1e-4, lbd=1e-4):
+def irls_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tuple, maxiter=100, tolLower=1e-2, epsilon=1e-3, lbd=1e-3):
     A = basis_signal
     b = sampled_signal
     xguess = linalg.lsqr(A, b)[0]

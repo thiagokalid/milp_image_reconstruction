@@ -35,8 +35,8 @@ acq = Acquisition(cp, fs, gate_start, gate_end, reflector_grid, transducer)
 # %% Aplicação do método de reconstrução de imagem:
 
 # Localização do refletor que deseja-se reconstruir em mm:
-xr = [-1.25]
-zr = [3.4]
+xr = [-1.25, 1]
+zr = [3.4, 4]
 
 sampled_fmc = None
 for xi, zi in zip(xr, zr):
@@ -47,6 +47,7 @@ for xi, zi in zip(xr, zr):
 
 sampled_signal = np.ravel(sampled_fmc)
 signal_size = len(sampled_signal)
+sampled_signal += np.random.rand(signal_size) * 0.1
 
 #
 imgsize = reflector_grid.get_imgsize()
@@ -63,7 +64,8 @@ print("L1 end.")
 
 print("IRLS begin.")
 epsilon = 1e-4
-lbd = 1
+lbd = 0
+tol = 1e-3
 t0 = time.time()
 img_irls, irls_residue = irls_method(
     np.reshape(acq.fmc_basis, newshape=(signal_size, reflector_grid.get_numpxs())),
@@ -71,7 +73,8 @@ img_irls, irls_residue = irls_method(
     reflector_grid.get_imgsize(),
     lbd=lbd,
     epsilon=epsilon,
-    maxiter=100
+    maxiter=20,
+    tolLower=tol
 )
 t_irls = time.time() - t0
 print("IRLS end.")
@@ -88,8 +91,8 @@ print("L2 end.")
 #%% Display dos resultados:
 
 #%% Display dos resultados:
-max_amp = np.max([img_proposed, img_passarin, img_irls])
-min_amp = np.min([img_proposed, img_passarin, img_irls])
+min_amp = np.nanmin([img_proposed, img_passarin, img_irls])
+max_amp = np.nanmax([img_proposed, img_passarin, img_irls])
 convert_to_db = lambda img: 20 * np.log10(img - min_amp / (max_amp - min_amp) + 1e-9)
 
 offset = (reflector_grid.xres / 2, reflector_grid.zres / 2)
@@ -98,8 +101,8 @@ img_proposed_db = convert_to_db(img_proposed)
 img_passarin_db = convert_to_db(img_passarin)
 img_irls_db = convert_to_db(img_irls)
 
-vmin = np.min([img_passarin_db, img_proposed_db, img_irls_db])
-vmax = np.max([img_passarin_db, img_proposed_db, img_irls_db])
+vmin = np.nanmin([img_passarin_db, img_proposed_db, img_irls_db])
+vmax = np.nanmax([img_passarin_db, img_proposed_db, img_irls_db])
 
 plt.figure(figsize=(18, 10))
 plt.subplot(2, 3, 1)
