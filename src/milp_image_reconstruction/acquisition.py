@@ -2,9 +2,12 @@ from .reflector_grid import ReflectorGrid
 from .transducer import Transducer
 
 import numpy as np
+from numpy import ndarray
+
+__all__ = ["Acquisition"]
 
 class Acquisition:
-    def __init__(self, cp, fs, gate_start, gate_end, reflector_grid: ReflectorGrid, transducer: Transducer):
+    def __init__(self, cp: float, fs: float, gate_start: float, gate_end: float, reflector_grid: ReflectorGrid, transducer: Transducer):
         self.fmc_basis = None
         self.fmc_list = list()
         self.reflector_grid = reflector_grid
@@ -37,7 +40,7 @@ class Acquisition:
             print(f"progress = {(i + 1) / self.transducer.n_elem * 100:.2f}")
         return self.fmc_basis
 
-    def generate_signal(self, xr, zr):
+    def generate_signal(self, xr: float, zr: float) -> ndarray:
         fmc = np.zeros(
             shape=(self.n_samples, self.transducer.n_elem, self.transducer.n_elem))
         i, j = -1, -1
