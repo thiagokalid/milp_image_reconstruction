@@ -5,7 +5,7 @@ from scipy.sparse.linalg import lsqr, cg, minres
 
 __all__ = ["irls_minres"]
 
-def irls_minres(A, b, maxiter, xguess, lbd=1e-4, tolLower=1e-2, epsilon=1e-4):
+def irls_minres(A, b, xguess, maxiter=100, lbd=1e-4, tolLower=1e-2, epsilon=1e-4):
     '''
 		Solves Ax = b through x = (A.T @ A)^-1 @ A.T @ b using IRLS
 		'''
@@ -30,13 +30,13 @@ def irls_minres(A, b, maxiter, xguess, lbd=1e-4, tolLower=1e-2, epsilon=1e-4):
         b1 = W1 @ b
         err1 = W1 @ err
 
-        deltax = lsqr(
-            A1.T @ A1,
-            A1.T @ err1,
+        f1 = lsqr(
+            A1.T @ A1 + lbd * W2,
+            A1.T @ b1,
             atol=1e-3
         )[0]
 
-        f1 = f1 + deltax
+        #f1 = f1 + deltax
 
         # Cost-function is sum |gi - Hi * fi| + lambda |fi|
         cost_fun = np.sum(np.abs(b - A @ f1)) + lbd * np.sum(np.abs(f1))
@@ -50,7 +50,7 @@ def irls_minres(A, b, maxiter, xguess, lbd=1e-4, tolLower=1e-2, epsilon=1e-4):
         cost_fun_log.append(cost_fun)
         print(f"Cost-function = {cost_fun}")
 
-        if cost_fun < tolLower:
+        if cost_fun - cost_fun_log[k-1] < tolLower:
             converged = True
             break
     x = f1

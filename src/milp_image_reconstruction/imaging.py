@@ -88,6 +88,7 @@ def milp_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple):
     constraints = LinearConstraint(A, b_l[:, 0])
     result = milp(c=c[:, 0], constraints=constraints)
     img = np.reshape(result.x[:M], newshape=imgsize)
+    sae = np.sum(result.x[M:])
     residue = result.x[M:]
     residue[-N:] *= -1
 
@@ -99,7 +100,8 @@ def milp_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple):
         success = result.success,
         status = result.status,
         message = result.message,
-        elapsed_time = time.time() - t0
+        elapsed_time = time.time() - t0,
+        sae = sae
     )
 
     return result
@@ -129,5 +131,6 @@ def irls_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, 
         residue=residue,
         x_log = x_log,
         cost_fun_log = cost_fun_log,
+        sae = np.sum(np.abs(cost_fun))
     )
     return result

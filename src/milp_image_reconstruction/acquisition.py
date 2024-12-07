@@ -55,3 +55,14 @@ class Acquisition:
             j = -1
             self.fmc_list.append(fmc)
         return fmc
+
+    def generate_signals(self, xr: list, zr: list, noise_factor: float=-1) -> ndarray:
+        sampled_fmc = None
+        for xi, zi in zip(xr, zr):
+            if sampled_fmc is None:
+                sampled_fmc = self.generate_signal(xi, zi)
+            else:
+                sampled_fmc += self.generate_signal(xi, zi)
+        if noise_factor >= 0:
+            sampled_fmc += np.random.randn(*sampled_fmc.shape) * 0.05
+        return sampled_fmc

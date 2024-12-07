@@ -39,16 +39,11 @@ acq = Acquisition(cp, fs, gate_start, gate_end, reflector_grid, transducer)
 xr = [-1.25]
 zr = [3.4]
 
-sampled_fmc = None
-for xi, zi in zip(xr, zr):
-    if sampled_fmc is None:
-        sampled_fmc = acq.generate_signal(xi, zi)
-    else:
-        sampled_fmc += acq.generate_signal(xi, zi)
+sampled_fmc = acq.generate_signals(xr, zr, noise_factor=5e-2)
 
+# Flatten FMC:
 sampled_signal = np.ravel(sampled_fmc)
 signal_size = len(sampled_signal)
-#sampled_signal += np.random.rand(signal_size) * 0.1
 
 #
 imgsize = reflector_grid.get_imgsize()
@@ -69,9 +64,9 @@ print("L1 end.")
 #%% IRLS with L1 norm
 
 print("IRLS begin.")
-epsilon = 1e-8
-lbd = 0
-tol = 1e-2
+epsilon = 1e-6
+lbd = 100
+tol = 1e-6
 result_irls = irls_method(
     np.reshape(acq.fmc_basis, newshape=(signal_size, reflector_grid.get_numpxs())),
     sampled_signal,
@@ -116,7 +111,7 @@ vmax = np.nanmax([img_passarin_db, img_milp_db, img_irls_db])
 plt.figure(figsize=(18, 10))
 plt.subplot(2, 3, 1)
 plt.suptitle("Image in dB")
-plt.imshow(img_milp_db, extent=reflector_grid.get_extent(offset=offset), aspect='equal', vmin=vmin, vmax=vmax)
+plt.imshow(img_milp_db, extent=reflector_grid.get_extent(offset=offset), aspect='equal')
 plt.plot(*reflector_grid.get_coords(), "xb", alpha=.5, label="Reflectors grid")
 plt.plot(xr, zr, 'or', label='Target reflector')
 plt.xlabel("x-axis in mm")
@@ -126,12 +121,12 @@ plt.colorbar()
 plt.legend(loc="upper center")
 
 ax = plt.subplot(2, 3, 4)
-plt.title(f"SSE = {np.sum(np.power(residue_milp, 2)):.2e}")
+plt.title(f"SAE = {result_milp.sae:.2e}")
 ax.hist(residue_milp, bins=100, density=False)
 plt.grid()
 
 plt.subplot(2, 3, 2)
-plt.imshow(img_irls_db, extent=reflector_grid.get_extent(offset=offset), aspect='equal', vmin=vmin, vmax=vmax)
+plt.imshow(img_irls_db, extent=reflector_grid.get_extent(offset=offset), aspect='equal')
 plt.plot(*reflector_grid.get_coords(), "xb", alpha=.5, label="Reflectors grid")
 plt.plot(xr, zr, 'or', label='Target reflector')
 plt.xlabel("x-axis in mm")
@@ -141,12 +136,12 @@ plt.colorbar()
 plt.legend(loc="upper center")
 
 ax = plt.subplot(2, 3, 5)
-plt.title(f"SSE = {np.sum(np.power(residue_irls, 2)):.2e}")
+plt.title(f"SAE = {result_irls.sae:.2e}")
 ax.hist(residue_irls, bins=100, density=False)
 plt.grid()
 
 plt.subplot(2, 3, 3)
-plt.imshow(img_passarin_db, extent=reflector_grid.get_extent(offset=offset), aspect='equal', vmin=vmin, vmax=vmax)
+plt.imshow(img_passarin_db, extent=reflector_grid.get_extent(offset=offset), aspect='equal')
 plt.plot(*reflector_grid.get_coords(), "xb", alpha=.5, label="Reflectors grid")
 plt.plot(xr, zr, 'or', label='Target reflector')
 plt.xlabel("x-axis in mm")
@@ -162,7 +157,3 @@ plt.grid()
 
 plt.show()
 plt.tight_layout()
-
-plt.figure(figsize=(8, 4))
-plt.subplot(1, 2, 1)
-plt.plot(result_irls.cost_fun_log, "o-")
