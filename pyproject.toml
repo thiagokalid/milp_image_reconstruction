@@ -1,0 +1,7 @@
+[project]
+name = "milp_image_reconstruction"
+version = "0.1"
+dependencies = [
+    "numpy~=1.26",
+    "scipy~=1.13"
+]
