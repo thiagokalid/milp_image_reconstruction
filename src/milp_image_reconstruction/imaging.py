@@ -1,6 +1,7 @@
 # Import of public libraries:
 import numpy as np
 import scipy
+import time
 
 # Import of selected objects:
 import scipy.sparse.linalg as linalg
@@ -11,16 +12,34 @@ from numpy import ndarray
 # Import of custom libraries:
 from ._utils import _transform_dense_to_sparse_matrix, _transform_dense_to_sparse_array
 from .irls import *
+from ._imaging_result import ImagingResult
 
 __all__ = ["passarin_method", "milp_method", "irls_method"]
 
 def passarin_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, damp=0):
+    t0 = time.time()
     A = basis_signal
     b = sampled_signal
-    x = linalg.lsqr(A, b, damp=damp)[0]
+    x, istop, itn, r1norm = linalg.lsqr(A, b, damp=damp)[:4]
     img = np.reshape(x, newshape=imgsize)
     residue = b - A @ x
-    return img.T, residue
+
+    success = True if istop == 1 else False
+    message = "Solves least-squares" if istop == 1 else "Approximation of least-squares"
+
+    result = ImagingResult(
+        x = x,
+        img = img.T,
+        cost_fun = r1norm,
+        residue = residue,
+        success = success,
+        status = istop,
+        message = message,
+        elapsed_time = time.time() - t0,
+        niter = itn,
+    )
+
+    return result
 
 
 def naive_l1_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple):
@@ -38,6 +57,7 @@ def naive_l1_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tup
 
 
 def milp_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple):
+    t0 = time.time()
     N, M = basis_signal.shape
     g = sampled_signal.reshape(N, 1)
     g = _transform_dense_to_sparse_array(g)
@@ -70,19 +90,44 @@ def milp_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple):
     img = np.reshape(result.x[:M], newshape=imgsize)
     residue = result.x[M:]
     residue[-N:] *= -1
-    return img.T, residue
+
+    result = ImagingResult(
+        x = result.x,
+        img = img.T,
+        cost_fun = result.fun,
+        residue = residue,
+        success = result.success,
+        status = result.status,
+        message = result.message,
+        elapsed_time = time.time() - t0
+    )
+
+    return result
 
 def irls_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, maxiter=100, tolLower=1e-2,
-                epsilon=1e-3, lbd=1e-3, method="minres"):
+                epsilon=1e-3, lbd=1e-3, method="minres") -> ImagingResult:
+    t0 = time.time()
     A = basis_signal
     b = sampled_signal
     xguess = linalg.lsqr(A, b)[0]
 
     match method:
         case "minres":
-            x, residue = irls_minres(A, b, maxiter=maxiter, xguess=xguess, tolLower=tolLower, epsilon=epsilon, lbd=lbd)
+            x, residue, cost_fun, converged, x_log, cost_fun_log\
+                = irls_minres(A, b, maxiter=maxiter, xguess=xguess, tolLower=tolLower, epsilon=epsilon, lbd=lbd)
         case _:
             raise NotImplementedError
 
-    img = np.reshape(x, newshape=imgsize)
-    return img.T, residue
+    img = np.reshape(x, newshape=imgsize).T
+
+    result = ImagingResult(
+        x=x,
+        img=img,
+        cost_fun = cost_fun,
+        converged = converged,
+        elapsed_time = time.time() - t0,
+        residue=residue,
+        x_log = x_log,
+        cost_fun_log = cost_fun_log,
+    )
+    return result
