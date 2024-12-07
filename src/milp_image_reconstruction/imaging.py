@@ -1,30 +1,18 @@
+# Import of public libraries:
 import numpy as np
 import scipy
+
+# Import of selected objects:
 import scipy.sparse.linalg as linalg
-from scipy.sparse.linalg import cg
-
-from .acquisition import Acquisition
-
+from scipy.sparse.linalg import cg, minres
 from scipy.optimize import milp
+from numpy import ndarray
+
+# Import of custom libraries:
+from .utils import transform_dense_to_sparse_matrix, transform_dense_to_sparse_array
 
 
-def transform_dense_to_sparse_array(dense_signal, epsilon=1e-2):
-    sparse_signal = np.zeros_like(dense_signal)
-    non_zero = np.power(dense_signal, 2) > np.power(epsilon, 2)
-    sparse_signal[non_zero] = dense_signal[non_zero]
-    sparse_signal = scipy.sparse.csc_array(sparse_signal)
-    return sparse_signal
-
-
-def transform_dense_to_sparse_matrix(dense_signal, epsilon=1e-2):
-    sparse_signal = np.zeros_like(dense_signal)
-    non_zero = np.power(dense_signal, 2) > np.power(epsilon, 2)
-    sparse_signal[non_zero] = dense_signal[non_zero]
-    sparse_signal = scipy.sparse.csc_array(sparse_signal)
-    return sparse_signal
-
-
-def passarin_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tuple, damp=0):
+def passarin_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, damp=0):
     A = basis_signal
     b = sampled_signal
     x = linalg.lsqr(A, b, damp=damp)[0]
@@ -33,7 +21,7 @@ def passarin_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsiz
     return img.T, b - A @ x
 
 
-def naive_l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tuple):
+def naive_l1_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple):
     M, N = basis_signal.shape
     g = sampled_signal
     H = basis_signal
@@ -47,7 +35,7 @@ def naive_l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsiz
     return img.T
 
 
-def l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tuple):
+def l1_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple):
     N, M = basis_signal.shape
     g = sampled_signal.reshape(N, 1)
     g = transform_dense_to_sparse_array(g)
@@ -83,61 +71,42 @@ def l1_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tup
     return img.T, residue
 
 
-def IRLSCG(A, B, maxiter, xguess, lbd, tolLower, epsilon):
+def irls_minres(A, b, maxiter, xguess, lbd=1e-4, tolLower=1e-2, epsilon=1e-4):
     '''
-		Itera no maximo maxiter vezes o IRLSCG.
-			Lembrando, queremos estimar a solução para A = Bx.
-			A <= A
-			B <= B
-			xguess <= o chute inicial para x
-			lbd <= lambda (deve estar de acordo com a curva L)
-			tolLower <= parar o loop de iterações quando o erro é menor que este valor
-			epsilon <= valor que ajuda na aproximação f(x)=x para f(x) = f1(x)=sqrt(x^2+epsilon)
-			com o objetivo de tornar f(x) diferenciavel
+		Solves Ax = b through x = (A.T @ A)^-1 @ A.T @ b using IRLS
 		'''
+    N = A.shape[1]
+    W = np.zeros(shape=(N, N))
 
+    f = np.zeros(N)
     f0 = np.sqrt(xguess ** 2 + epsilon)
-    err = np.sqrt((B - A @ xguess)**2 + epsilon)
-    deltax = np.zeros_like(xguess)
+    err = np.sqrt((b - A @ xguess) ** 2 + epsilon)
+    f1 = None
 
     for k in range(maxiter):
-        # Weighted factor considering (p - 2)/2:
-        W1 = np.diag(np.sqrt(err) ** (-1))
-        W2 = np.diag(np.sqrt(f0) ** (-1))
+        W1 = np.diag(np.sqrt(f0) ** (-1))
+        W2 = np.diag(np.sqrt(err) ** (-1))
 
-        # Step:
-        A1 = W1 @ A
-        err1 = W1 @ err
+        A1 = W2 @ A
+        b1 = W2 @ b
 
-        # Solve A1 @ x = err1:
-        deltax = linalg.lsqr(
-            A1.T @ A1,
-            A1.T @ err1,
-            atol=1e-3
-        )[0]
+        f1 = linalg.lsqr(A1.T @ A1 + lbd * W1, A1.T @ b1, atol=1e-3)[0]
 
-        #
-        f1 = f0 + deltax
-
-        # Delta
         ek = (np.linalg.norm(f1 - f0, 2) / np.linalg.norm(f0, 2)) ** 2
-
-        # Absolute function approximation: |x| ≃ sqrt(x² + epsilon)
         f0 = np.sqrt(f1 ** 2 + epsilon)
-        err = np.sqrt((B - A @ f1)**2 + epsilon)
-
+        err = np.sqrt((b - A @ f1) ** 2 + epsilon)
+        print("ek = ", ek)
         if ek < tolLower:
-            return f0, B - A @ f0
-        print("K=",k)
-        print(f"ek={ek:.4f}")
+            return f0, b - A @ f0
     print("Not converged.")
-    return f1, B - A @ f1
+    return f1, b - A @ f1
 
 
-def irls_method(basis_signal: np.ndarray, sampled_signal: np.ndarray, imgsize: tuple, maxiter=100, tolLower=1e-2, epsilon=1e-3, lbd=1e-3):
+def irls_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, maxiter=100, tolLower=1e-2,
+                epsilon=1e-3, lbd=1e-3):
     A = basis_signal
     b = sampled_signal
     xguess = linalg.lsqr(A, b)[0]
-    x, residue = IRLSCG(A, b, maxiter=maxiter, xguess=xguess, tolLower=tolLower, epsilon=epsilon, lbd=lbd)
+    x, residue = irls_minres(A, b, maxiter=maxiter, xguess=xguess, tolLower=tolLower, epsilon=epsilon, lbd=lbd)
     img = np.reshape(x, newshape=imgsize)
     return img.T, residue
