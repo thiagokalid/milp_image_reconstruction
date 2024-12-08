@@ -30,10 +30,9 @@ def irls_minres(A, b, xguess, maxiter=100, lbd=1e-4, tolLower=1e-2, epsilon=1e-4
         b1 = W1 @ b
         err1 = W1 @ err
 
-        f1 = lsqr(
+        f1 = minres(
             A1.T @ A1 + lbd * W2,
-            A1.T @ b1,
-            atol=1e-3
+            A1.T @ b1
         )[0]
 
         #f1 = f1 + deltax

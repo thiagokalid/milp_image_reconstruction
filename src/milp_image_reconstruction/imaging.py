@@ -2,12 +2,18 @@
 import numpy as np
 import scipy
 import time
+import pylops
 
 # Import of selected objects:
 import scipy.sparse.linalg as linalg
 from scipy.sparse.linalg import cg, minres
 from scipy.optimize import milp, LinearConstraint
 from numpy import ndarray
+
+
+from pylops.optimization.sparsity import fista
+from scipy.sparse.linalg import aslinearoperator
+from scipy.sparse import csc_array
 
 # Import of custom libraries:
 from ._utils import _transform_dense_to_sparse_matrix, _transform_dense_to_sparse_array
@@ -133,4 +139,46 @@ def irls_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, 
         cost_fun_log = cost_fun_log,
         sae = np.sum(np.abs(cost_fun))
     )
+    return result
+
+def laroche_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, maxiter=100, tolLower=1e-2,
+                epsilon=1e-3, lbd=1e-3, diff_ord=1, mu1=1, mu2=1) -> ImagingResult:
+    t0 = time.time()
+    A = basis_signal
+    N, M = basis_signal.shape
+    b = sampled_signal
+    xguess = linalg.lsqr(A, b)[0]
+
+    Nt = len(b)
+    Dvec = np.zeros(shape=(M, 1), dtype=float)
+    match diff_ord:
+        case 1:
+            Dmask = [1, -1] # First-order difference mask
+        case 2:
+            Dmask = [1, -2, 1] # Second-order difference mask
+        case _:
+            Dmask = [0]
+
+    D = scipy.linalg.convolution_matrix(Dmask, M, mode='same')
+
+    He = A @ D * 1/(np.sqrt(mu2))
+    ye = b
+
+
+    Aop = pylops.MatrixMult(He, dtype="float64")
+
+    x, iter, cost_fun = fista(Aop, ye, x0=xguess, eps=mu1)
+
+    img = np.reshape(x, newshape=imgsize)
+    residue = b - A@x
+
+    result = ImagingResult(
+        x=x,
+        img=img.T,
+        cost_fun = cost_fun[-1],
+        cost_fun_log = cost_fun,
+        elapsed_time = time.time() - t0,
+        residue=residue
+    )
+
     return result

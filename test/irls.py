@@ -42,6 +42,7 @@ def milp_method(basis_signal, sampled_signal):
     result = milp(c=c[:, 0], constraints=constraints)
     sae = np.sum(result.x[M:])
 
+    x = result.x[:M]
     residue = result.x[M:]
     residue[-N:] *= -1
 
@@ -52,15 +53,15 @@ if __name__ == '__main__':
     y = .1 * np.sin(t**3) + 5e-3 * np.random.randn(*t.shape)
 
     # Models the linear regression problem as Ax=b:
-    A = np.vstack((np.sin(t**2), t**2, t, np.zeros_like(t))).T
-    b = y
+    A = np.copy(np.vstack((np.sin(t**2), t**3, t**2, t, np.zeros_like(t))).T)
+    b = np.copy(y)
 
-    lbd = 0
-    x, residue, cost_fun, converged, x_log, cost_fun_log = irls_minres(A, b, np.zeros(A.shape[1]), lbd=lbd)
-
+    lbd = 1000
     x_milp, residue_milp, sae_milp = milp_method(A, b)
 
-    x_ls, istop, itn, r1norm  = scipy.sparse.linalg.lsqr(A, b)[:4]
+    x, residue, cost_fun, converged, x_log, cost_fun_log = irls_minres(A, b, np.zeros(A.shape[1]), lbd=lbd, tolLower=1e-5)
+
+    x_ls, istop, itn, r1norm  = scipy.sparse.linalg.lsqr(A, b, damp=lbd)[:4]
 
     plt.figure()
     plt.plot(t, y, 'o-k', alpha=.3, markersize=2)
