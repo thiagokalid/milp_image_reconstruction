@@ -199,14 +199,8 @@ def laroche_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tupl
     return result
 
 
-<<<<<<< HEAD
 def watt_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, alpha_perc: float = 1) -> ImagingResult:
 
-=======
-def watt_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, maxiter=100, tolLower=1e-2,
-                epsilon=1e-3, lbd=1e-3, diff_ord=1, alpha_perc: float = 1) -> ImagingResult:
-    t0 = time.time()
->>>>>>> origin/dev
     A = basis_signal
     N, M = basis_signal.shape
     b = sampled_signal
@@ -220,11 +214,8 @@ def watt_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, 
         s_regularized[i] = s[i] / (s[i]**2 + (alpha * maxS)**2)
 
     newP = Vh.T @ sparse.diags_array(s_regularized) @ U.T
-<<<<<<< HEAD
 
     t0 = time.time()
-=======
->>>>>>> origin/dev
     x = newP @ b
 
     img = np.reshape(x, newshape=imgsize)
@@ -235,11 +226,8 @@ def watt_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, 
         img=img.T,
         elapsed_time=time.time() - t0,
         residue=residue,
-<<<<<<< HEAD
         metric=np.sum(np.power(residue, 2)),
         metric_name="SSE",
-=======
->>>>>>> origin/dev
         P=newP
     )
 
