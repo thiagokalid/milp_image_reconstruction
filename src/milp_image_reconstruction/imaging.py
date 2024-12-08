@@ -8,12 +8,13 @@ import pylops
 import scipy.sparse.linalg as linalg
 from scipy.sparse.linalg import cg, minres
 from scipy.optimize import milp, LinearConstraint
+from scipy import sparse
 from numpy import ndarray
 
 
 from pylops.optimization.sparsity import fista
 from scipy.sparse.linalg import aslinearoperator
-from scipy.sparse import csc_array
+from scipy.sparse import csc_array, csc_matrix
 
 # Import of custom libraries:
 from ._utils import _transform_dense_to_sparse_matrix, _transform_dense_to_sparse_array
@@ -157,17 +158,23 @@ def laroche_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tupl
         case 2:
             Dmask = [1, -2, 1] # Second-order difference mask
         case _:
-            Dmask = [0]
+            Dmask = [1]
 
     D = scipy.linalg.convolution_matrix(Dmask, M, mode='same')
 
-    He = A @ D * 1/(np.sqrt(mu2))
-    ye = b
+    He = np.vstack((
+        A,
+        np.sqrt(mu2) * D
+    ))
+
+    R = He.shape[0]
+    ye = np.zeros(shape=(R, 1))
+    ye[:len(b), 0] = b[:]
 
 
     Aop = pylops.MatrixMult(He, dtype="float64")
 
-    x, iter, cost_fun = fista(Aop, ye, x0=xguess, eps=mu1)
+    x, iter, cost_fun = fista(Aop, ye[:, 0], x0=xguess, eps=mu1)
 
     img = np.reshape(x, newshape=imgsize)
     residue = b - A@x
@@ -179,6 +186,40 @@ def laroche_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tupl
         cost_fun_log = cost_fun,
         elapsed_time = time.time() - t0,
         residue=residue
+    )
+
+
+
+    return result
+
+
+def watt_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, maxiter=100, tolLower=1e-2,
+                epsilon=1e-3, lbd=1e-3, diff_ord=1, alpha_perc: float = 1) -> ImagingResult:
+    t0 = time.time()
+    A = basis_signal
+    N, M = basis_signal.shape
+    b = sampled_signal
+    alpha = alpha_perc / 100
+
+    U, s, Vh = scipy.sparse.linalg.svds(A, k=(A.shape[1]-1))
+
+    maxS = np.max(s)
+    s_regularized = np.zeros_like(s)
+    for i in range(s.shape[0]):
+        s_regularized[i] = s[i] / (s[i]**2 + (alpha * maxS)**2)
+
+    newP = Vh.T @ sparse.diags_array(s_regularized) @ U.T
+    x = newP @ b
+
+    img = np.reshape(x, newshape=imgsize)
+    residue = b - A @ x
+
+    result = ImagingResult(
+        x=x,
+        img=img.T,
+        elapsed_time=time.time() - t0,
+        residue=residue,
+        P=newP
     )
 
     return result
