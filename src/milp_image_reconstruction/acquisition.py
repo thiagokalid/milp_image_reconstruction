@@ -56,13 +56,30 @@ class Acquisition:
             self.fmc_list.append(fmc)
         return fmc
 
-    def generate_signals(self, xr: list, zr: list, noise_factor: float=-1) -> ndarray:
+    def generate_signals(self, xr: list, zr: list, noise_std: float=0) -> ndarray:
         sampled_fmc = None
         for xi, zi in zip(xr, zr):
             if sampled_fmc is None:
                 sampled_fmc = self.generate_signal(xi, zi)
             else:
                 sampled_fmc += self.generate_signal(xi, zi)
-        if noise_factor >= 0:
-            sampled_fmc += np.random.randn(*sampled_fmc.shape) * 0.05
+        if noise_std > 0:
+            sampled_fmc += np.random.randn(*sampled_fmc.shape) * noise_std
         return sampled_fmc
+
+    def generate_random_reflectors_signals(self, n_reflectors: int, noise_std: float=0, method: str="on-grid"):
+        x, z = self.reflector_grid.get_coords()
+        xmin, xmax = x.min(), x.max()
+        zmin, zmax = z.min(), z.max()
+
+        match method:
+            case "on-grid":
+                xr = np.random.randint(low=xmin, high=xmax, size=n_reflectors)
+                zr = np.random.randint(low=zmin, high=zmax, size=n_reflectors)
+            case "off-grid":
+                xr = [np.random.uniform(xmin, xmax) for _ in range(n_reflectors)]
+                zr = [np.random.uniform(zmin, zmax) for _ in range(n_reflectors)]
+            case _:
+                raise ValueError("Invalid method.")
+
+        return self.generate_signals(xr, zr, noise_std)

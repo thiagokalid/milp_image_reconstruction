@@ -37,16 +37,10 @@ transducer = Transducer(n_elem=Nelem, fc=fc)
 # Create acquisiton object:
 acq = Acquisition(cp, fs, gate_start, gate_end, reflector_grid, transducer)
 # %% Aplicação do método de reconstrução de imagem:
-x, z = reflector_grid.get_coords()
-xmin, xmax = x.min(), x.max()
-zmin, zmax = z.min(), z.max()
+
 
 # Localização do refletor que deseja-se reconstruir em mm:
-N = 20
-xr = np.random.randint(low=xmin, high=xmax, size=N)
-zr = np.random.randint(low=zmin, high=zmax, size=N)
-
-sampled_fmc = acq.generate_signals(xr, zr, 5e-2)
+sampled_fmc = acq.generate_random_reflectors_signals(20)
 
 sampled_signal = np.ravel(sampled_fmc)
 signal_size = len(sampled_signal)

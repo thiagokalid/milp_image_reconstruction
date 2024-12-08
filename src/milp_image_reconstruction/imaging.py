@@ -200,7 +200,6 @@ def laroche_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tupl
 
 
 def watt_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, alpha_perc: float = 1) -> ImagingResult:
-
     A = basis_signal
     N, M = basis_signal.shape
     b = sampled_signal
