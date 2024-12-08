@@ -36,76 +36,82 @@ transducer = Transducer(n_elem=Nelem, fc=fc)
 
 # Create acquisiton object:
 acq = Acquisition(cp, fs, gate_start, gate_end, reflector_grid, transducer)
+acq.generate_basis_signal()
+
 # %% Aplicação do método de reconstrução de imagem:
 
+# # Localização do refletor que deseja-se reconstruir em mm:
+acq.add_random_reflectors(5, method="on-grid", seed=1)
+acq.add_reflector(0, 0)
+acq.add_reflector(2, 2)
+acq.add_reflector(3, 5)
 
-# Localização do refletor que deseja-se reconstruir em mm:
-sampled_fmc = acq.generate_random_reflectors_signals(20)
+simulated_fmc = acq.generate_signals()
 
-sampled_signal = np.ravel(sampled_fmc)
-signal_size = len(sampled_signal)
+simulated_flatten_fmc = np.ravel(simulated_fmc)
+signal_size = len(simulated_flatten_fmc)
 
 #
+H = np.reshape(acq.fmc_basis, newshape=(signal_size, reflector_grid.get_numpxs()))
 imgsize = reflector_grid.get_imgsize()
 
 results = []
 method_names = []
 
-#%% MILP
+# %% MILP
 
 print("L1 begin.")
 result_milp = milp_method(
-    np.reshape(acq.fmc_basis, newshape=(signal_size, reflector_grid.get_numpxs())),
-    sampled_signal,
-    reflector_grid.get_imgsize()
+    H,
+    simulated_flatten_fmc,
+    imgsize
 )
 results.append(result_milp)
 method_names.append("MILP based")
 print("L1 end.")
 
-# #%% IRLS with L1 norm
-#
-# print("IRLS begin.")
-# epsilon = 1e-8
-# lbd = 100
-# tol = 1e-6
-# result_irls = irls_method(
-#     np.reshape(acq.fmc_basis, newshape=(signal_size, reflector_grid.get_numpxs())),
-#     sampled_signal,
-#     reflector_grid.get_imgsize(),
-#     lbd=lbd,
-#     epsilon=epsilon,
-#     maxiter=20,
-#     tolLower=tol
-# )
-# results.append(result_irls)
-# method_names.append("L1L1 norm through IRLS")
-# print("IRLS end.")
+#%% IRLS with L1 norm
 
-# #%% LSQR with L2 norm
-#
-# print("L2 begin.")
-# result_l2 = passarin_method(
-#     np.reshape(acq.fmc_basis, newshape=(signal_size, reflector_grid.get_numpxs())),
-#     sampled_signal,
-#     reflector_grid.get_imgsize(),
-#     damp=lbd
-# )
-# results.append(result_l2)
-# method_names.append("L2L1 norm through LSQR")
-# print("L2 end.")
+print("IRLS begin.")
+epsilon = 1e-8
+lbd = 100
+tol = 1e-6
+result_irls = irls_method(
+    H,
+    simulated_flatten_fmc,
+    imgsize,
+    lbd=lbd,
+    epsilon=epsilon,
+    maxiter=20,
+    tolLower=tol
+)
+results.append(result_irls)
+method_names.append("L1L1 norm through IRLS")
+print("IRLS end.")
+
+#%% LSQR with L2 norm
+
+print("L2 begin.")
+result_l2 = passarin_method(
+    H,
+    simulated_flatten_fmc,
+    imgsize,
+    damp=lbd
+)
+results.append(result_l2)
+method_names.append("L2L1 norm through LSQR")
+print("L2 end.")
 
 #%% Laroche 2020:
 
-H = np.reshape(acq.fmc_basis, newshape=(signal_size, reflector_grid.get_numpxs()))
 print("Laroche begin.")
-mumax = 2 * np.max(np.abs(H.T @ sampled_signal))
+mumax = 2 * np.max(np.abs(H.T @ simulated_flatten_fmc))
 mu1 = .2 * mumax
 mu2 = 5e-2
 result_laroche = laroche_method(
     H,
-    sampled_signal,
-    reflector_grid.get_imgsize(),
+    simulated_flatten_fmc,
+    imgsize,
     mu1=mu1,
     mu2=mu2
 )
@@ -120,8 +126,8 @@ print("Watt begin.")
 alpha_perc = 35
 result_watt = watt_method(
     H,
-    sampled_signal,
-    reflector_grid.get_imgsize(),
+    simulated_flatten_fmc,
+    imgsize,
     alpha_perc=alpha_perc
 )
 results.append(result_watt)
@@ -156,7 +162,7 @@ for img_db, residue, elapsed_time, metric, metric_name, method_name in zip(imgs_
     ax1 = plt.subplot(2, n_cols, i)
     cax = plt.imshow(img_db, extent=reflector_grid.get_extent(offset=offset), aspect='equal', vmin=vmin, vmax=vmax)
     plt.plot(*reflector_grid.get_coords(), "xb", alpha=.5, label="Reflectors grid")
-    plt.plot(xr, zr, 'or', label='Target reflector')
+    plt.plot(acq.xr, acq.zr, 'or', label='Target reflector')
     plt.xlabel("x-axis in mm")
     plt.ylabel("z-axis in mm")
 
@@ -179,8 +185,6 @@ for img_db, residue, elapsed_time, metric, metric_name, method_name in zip(imgs_
         fig.subplots_adjust(right=0.85)  # Increase this value to move colorbar further right
 
         #plt.legend(loc="upper center")
-    else:
-        plt.plot(xr, zr, 'or', label='_')
 
 
     ax2 = plt.subplot(2, n_cols, n_cols + i)

@@ -19,10 +19,10 @@ class Acquisition:
         self.tspan = np.arange(self.gate_start * 1e-6, self.gate_end * 1e-6 + 1 / self.fs, 1 / self.fs) * 1e6
         self.n_samples = len(self.tspan)
 
-        # Generate the FMC from basic punctual reflector grid:
-        self.__generate_basis_signal()
+        # There is no punctual reflectors
+        self.xr, self.zr = [], []
 
-    def __generate_basis_signal(self):
+    def generate_basis_signal(self, verbose=False):
         self.fmc_basis = np.zeros(shape=(self.n_samples, self.transducer.n_elem, self.transducer.n_elem, self.reflector_grid.n_reflectors))
         i, j, k = -1, -1, -1
         for x_transm, z_transm in zip(*self.transducer.get_coords()):
@@ -37,8 +37,8 @@ class Acquisition:
                     self.fmc_basis[:, i, j, k] = self.transducer.get_signal(self.tspan, tof)
                 k = -1
             j = -1
-            print(f"progress = {(i + 1) / self.transducer.n_elem * 100:.2f}")
-        return self.fmc_basis
+            if verbose:
+                print(f"progress = {(i + 1) / self.transducer.n_elem * 100:.2f}")
 
     def generate_signal(self, xr: float, zr: float) -> ndarray:
         fmc = np.zeros(
@@ -56,7 +56,7 @@ class Acquisition:
             self.fmc_list.append(fmc)
         return fmc
 
-    def generate_signals(self, xr: list, zr: list, noise_std: float=0) -> ndarray:
+    def _generate_signals(self, xr: list, zr: list, noise_std: float) -> ndarray:
         sampled_fmc = None
         for xi, zi in zip(xr, zr):
             if sampled_fmc is None:
@@ -67,19 +67,38 @@ class Acquisition:
             sampled_fmc += np.random.randn(*sampled_fmc.shape) * noise_std
         return sampled_fmc
 
-    def generate_random_reflectors_signals(self, n_reflectors: int, noise_std: float=0, method: str="on-grid"):
+    def generate_signals(self, xr: list = None, zr: list= None, noise_std:float = 0) -> ndarray:
+        if not (xr is None and zr is None):
+            return self._generate_signals(xr, zr, noise_std)
+
+        elif xr is None and zr is None:
+            if len(self.xr) == 0:
+                raise ValueError("xr is empty.")
+            if len(self.zr) == 0:
+                raise ValueError("zr is empty.")
+            return self._generate_signals(self.xr, self.zr, noise_std)
+        else:
+            raise ValueError("xr, zr are invalid.")
+
+
+
+    def add_random_reflectors(self, n_reflectors: int, method: str="on-grid", seed = None) -> None:
+        if isinstance(seed, (int, float)):
+            np.random.seed(seed)
         x, z = self.reflector_grid.get_coords()
         xmin, xmax = x.min(), x.max()
         zmin, zmax = z.min(), z.max()
 
         match method:
             case "on-grid":
-                xr = np.random.randint(low=xmin, high=xmax, size=n_reflectors)
-                zr = np.random.randint(low=zmin, high=zmax, size=n_reflectors)
+                self.xr += np.random.randint(low=xmin, high=xmax, size=n_reflectors).tolist()
+                self.zr += np.random.randint(low=zmin, high=zmax, size=n_reflectors).tolist()
             case "off-grid":
-                xr = [np.random.uniform(xmin, xmax) for _ in range(n_reflectors)]
-                zr = [np.random.uniform(zmin, zmax) for _ in range(n_reflectors)]
+                self.xr += [np.random.uniform(xmin, xmax) for _ in range(n_reflectors)]
+                self.zr += [np.random.uniform(zmin, zmax) for _ in range(n_reflectors)]
             case _:
                 raise ValueError("Invalid method.")
 
-        return self.generate_signals(xr, zr, noise_std)
+    def add_reflector(self, xr: float, zr: float) -> None:
+        self.xr.append(xr)
+        self.zr.append(zr)
