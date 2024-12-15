@@ -5,7 +5,7 @@ from numpy import ndarray
 __all__ = ["Transducer"]
 
 class Transducer:
-    def __init__(self, pitch: float=.5, n_elem: int=64, fc: float=5e6, bw: float=.5, bwr: float=-6, pulse_type: str="gaussian"):
+    def __init__(self, pitch: float=.4, n_elem: int=64, fc: float=5e6, bw: float=.4, bwr: float=-6, pulse_type: str="gaussian"):
         self.pitch = pitch
         self.n_elem = n_elem
         self.fc = fc
