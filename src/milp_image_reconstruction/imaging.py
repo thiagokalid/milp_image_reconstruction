@@ -87,12 +87,27 @@ def milp_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple):
         scipy.sparse.hstack((-H, z_matrix, ei_matrix))
     ])
 
+
     b_l = np.vstack((
         g.toarray(),
         -g.toarray()
     ))
 
-    # b_u = np.ones_like(b_l)
+    # if True:
+    #     ri_matrix = scipy.sparse.eye_array(M, M, format='csc')
+    #     e_matrix = scipy.sparse.csc_array((M, N))
+    #
+    #     # b_u = np.ones_like(b_l)
+    #     A = scipy.sparse.vstack([
+    #         A,
+    #         scipy.sparse.hstack((ri_matrix, e_matrix, e_matrix)),
+    #     ])
+    #
+    #     ri = np.full(shape=(M, 1), fill_value=.1)
+    #     b_l = np.vstack((
+    #         b_l,
+    #         ri
+    #     ))
 
     constraints = LinearConstraint(A, b_l[:, 0])
     result = milp(c=c[:, 0], constraints=constraints)
@@ -127,6 +142,13 @@ def irls_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, 
         case "minres":
             x, residue, cost_fun, converged, x_log, cost_fun_log\
                 = irls_minres(A, b, maxiter=maxiter, xguess=xguess, tolLower=tolLower, epsilon=epsilon, lbd=lbd)
+        case "pylops":
+            Aop = pylops.MatrixMult(basis_signal, dtype="float64")
+            x, x_log = pylops.irls(Aop, b, threshR=False, epsR=epsilon, epsI=lbd, kind="data", nouter=maxiter)
+            residue = b - A @ x
+            cost_fun = np.sum(np.abs(b - A @ x))
+            converged = True
+            cost_fun_log = None
         case _:
             raise NotImplementedError
 
@@ -164,9 +186,10 @@ def laroche_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tupl
         case _:
             Dmask = [1]
 
-    D = scipy.linalg.convolution_matrix(Dmask, M, mode='same')
+    #D = scipy.linalg.convolution_matrix(Dmask, N, mode='same')
+    D = scipy.sparse.csc_array((N, M))
 
-    He = np.vstack((
+    He = scipy.sparse.vstack((
         A,
         np.sqrt(mu2) * D
     ))

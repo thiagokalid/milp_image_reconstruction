@@ -17,42 +17,44 @@ import numpy as np
 #%% Input de dados:
 
 # Parâmetros de simulação:
-cp = 5.9  # Velocidade de propagação no meio em mm/us
+cp = 5 # Velocidade de propagação no meio em mm/us
 gate_start = 0  # Início do gate em us
-gate_end = 10  # Fim do gate em us
-fc = 1e6  # Frequência central do transdutor em Hz
-fs = fc * 4  # Frequência de amostragem em Hz
-Nelem = 32
+gate_end = 8  # Fim do gate em us
+fc = 5e6  # Frequência central do transdutor em Hz
+fs = fc * 10  # Frequência de amostragem em Hz
+Nelem = 64
 
 #%% Criação dos Objetos para Simulação:
 
 # Create punctual reflectors grid:
-width = 6
-height = 7
-reflector_grid = ReflectorGrid(width=6, height=7, xres=.5, zres=.5)
+width = 2
+height = 2
+reflector_grid = ReflectorGrid(width=width, height=height, xres=20e-3, zres=20e-3)
 
 # Create transducer:
 transducer = Transducer(n_elem=Nelem, fc=fc)
 
 # Create acquisiton object:
 acq = Acquisition(cp, fs, gate_start, gate_end, reflector_grid, transducer)
-acq.generate_basis_signal()
+H = acq.generate_basis_signal(sparse=True, verbose=True)
+np.savez("fmc_basis.npz", H)
+
+# H = acq.generate_basis_signal("fmc_basis.npz")
 
 # %% Aplicação do método de reconstrução de imagem:
 
 # # Localização do refletor que deseja-se reconstruir em mm:
-acq.add_random_reflectors(5, method="on-grid", seed=1)
-acq.add_reflector(0, 0)
-acq.add_reflector(2, 2)
-acq.add_reflector(3, 5)
+# acq.add_random_reflectors(2, method="off-grid", seed=1)
+acq.add_reflector(.37, 1.37)
+acq.add_reflector(.5, 1)
 
-simulated_fmc = acq.generate_signals()
+simulated_fmc = acq.generate_signals(noise_std=0.1)
 
-simulated_flatten_fmc = np.ravel(simulated_fmc)
+# Flatten simulated_fmc to a Fortran-ordered 1D array
+simulated_flatten_fmc = np.ravel(simulated_fmc, order='F')
+
 signal_size = len(simulated_flatten_fmc)
 
-#
-H = np.reshape(acq.fmc_basis, newshape=(signal_size, reflector_grid.get_numpxs()))
 imgsize = reflector_grid.get_imgsize()
 
 results = []
@@ -60,54 +62,55 @@ method_names = []
 
 # %% MILP
 
-print("L1 begin.")
-result_milp = milp_method(
-    H,
-    simulated_flatten_fmc,
-    imgsize
-)
-results.append(result_milp)
-method_names.append("MILP based")
-print("L1 end.")
+# print("L1 begin.")
+# result_milp = milp_method(
+#     np.reshape(acq.fmc_basis, H.shape, order='C'),
+#     np.ravel(simulated_fmc, order='C'),
+#     imgsize
+# )
+# results.append(result_milp)
+# method_names.append("MILP based")
+# print("L1 end.")
 
 #%% IRLS with L1 norm
 
-print("IRLS begin.")
-epsilon = 1e-8
-lbd = 100
-tol = 1e-6
-result_irls = irls_method(
-    H,
-    simulated_flatten_fmc,
-    imgsize,
-    lbd=lbd,
-    epsilon=epsilon,
-    maxiter=20,
-    tolLower=tol
-)
-results.append(result_irls)
-method_names.append("L1L1 norm through IRLS")
-print("IRLS end.")
+# print("IRLS begin.")
+# epsilon = 1e-4
+# lbd = 0
+# tol = 1e-6
+# result_irls = irls_method(
+#     H,
+#     simulated_flatten_fmc,
+#     imgsize,
+#     lbd=lbd,
+#     epsilon=epsilon,
+#     maxiter=20,
+#     tolLower=tol,
+#     method="pylops"
+# )
+# results.append(result_irls)
+# method_names.append("L1L1 norm through IRLS")
+# print("IRLS end.")
 
 #%% LSQR with L2 norm
 
-print("L2 begin.")
-result_l2 = passarin_method(
-    H,
-    simulated_flatten_fmc,
-    imgsize,
-    damp=lbd
-)
-results.append(result_l2)
-method_names.append("L2L1 norm through LSQR")
-print("L2 end.")
+# print("L2 begin.")
+# result_l2 = passarin_method(
+#     H,
+#     simulated_flatten_fmc,
+#     imgsize,
+#     damp=lbd
+# )
+# results.append(result_l2)
+# method_names.append("L2L1 norm through LSQR")
+# print("L2 end.")
 
 #%% Laroche 2020:
 
 print("Laroche begin.")
 mumax = 2 * np.max(np.abs(H.T @ simulated_flatten_fmc))
-mu1 = .2 * mumax
-mu2 = 5e-2
+mu1 = .6 * mumax
+mu2 = 0
 result_laroche = laroche_method(
     H,
     simulated_flatten_fmc,
@@ -121,18 +124,18 @@ print("Laroche end.")
 
 #%% Watt 2024:
 
-H = np.reshape(acq.fmc_basis, newshape=(signal_size, reflector_grid.get_numpxs()))
-print("Watt begin.")
-alpha_perc = 35
-result_watt = watt_method(
-    H,
-    simulated_flatten_fmc,
-    imgsize,
-    alpha_perc=alpha_perc
-)
-results.append(result_watt)
-method_names.append("Watt 2024")
-print("Watt end.")
+# H = np.reshape(acq.fmc_basis, newshape=(signal_size, reflector_grid.get_numpxs()))
+# print("Watt begin.")
+# alpha_perc = 35
+# result_watt = watt_method(
+#     H,
+#     simulated_flatten_fmc,
+#     imgsize,
+#     alpha_perc=alpha_perc
+# )
+# results.append(result_watt)
+# method_names.append("Watt 2024")
+# print("Watt end.")
 
 #%% Extrai os resultados individuais:
 imgs = [result.img for result in results]
@@ -141,15 +144,16 @@ elapsed_times = [result.elapsed_time for result in results]
 metrics = [result.metric for result in results]
 metric_names = [result.metric_name for result in results]
 
-#%% Display dos resultados:
+# Display dos resultados:
 min_amp = np.nanmin(imgs)
 max_amp = np.nanmax(imgs)
 convert_to_db = lambda img: 20 * np.log10((img - min_amp) / (max_amp - min_amp) + 1e-9)
 
 offset = (reflector_grid.xres / 2, reflector_grid.zres / 2)
 imgs_db = [convert_to_db(img) for img in imgs]
+# imgs_db = [img for img in imgs]
 
-vmin = np.nanmax([np.min(imgs_db), -40])
+vmin = np.nanmax([np.min(imgs_db), -20])
 vmax = np.nanmax([imgs_db])
 
 n_cols = len(results)
@@ -160,7 +164,7 @@ fig = plt.figure(figsize=(18, 10))
 plt.suptitle("Image in dB")
 for img_db, residue, elapsed_time, metric, metric_name, method_name in zip(imgs_db, residues, elapsed_times, metrics, metric_names, method_names):
     ax1 = plt.subplot(2, n_cols, i)
-    cax = plt.imshow(img_db, extent=reflector_grid.get_extent(offset=offset), aspect='equal', vmin=vmin, vmax=vmax)
+    cax = plt.imshow(img_db, extent=reflector_grid.get_extent(offset=offset), aspect='equal', vmin=vmin, vmax=vmax, interpolation='None')
     plt.plot(*reflector_grid.get_coords(), "xb", alpha=.5, label="Reflectors grid")
     plt.plot(acq.xr, acq.zr, 'or', label='Target reflector')
     plt.xlabel("x-axis in mm")
