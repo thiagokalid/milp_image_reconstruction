@@ -5,6 +5,7 @@ import numpy as np
 import scipy
 from numpy import ndarray
 from numba import njit, prange
+from multiprocessing import Pool
 
 __all__ = ["Acquisition"]
 
@@ -164,19 +165,62 @@ def tof_kernel(Nel, Npx, cp, dist):
     return tof
 
 
-def multiply_kernel(x, tspan, tof_matrix, Nel, Nsamp, fc, bw, bwr):
-    N = Nel * Nel * Nsamp
-    y = np.zeros(N)
+def compute_chunk(args):
+    x, tspan, tof_matrix, fc, bw, bwr, chunk_start, chunk_end, Nsamp, Nel = args
+    N = (chunk_end - chunk_start) * Nsamp
+    y_chunk = np.zeros(N)
     t = np.arange(0, Nsamp)
 
-    for n in range(Nel * Nel):
+    for n in range(chunk_start, chunk_end):
         i = n % Nel
         j = n // Nel
 
-        idx = n * Nsamp + t
+        idx = (n - chunk_start) * Nsamp + t
         time = tspan
         tof = tof_matrix[i, j, :]
 
-        comb = scipy.signal.gausspulse(np.subtract.outer(time, tof) * 1e-6, fc=fc, bw=bw, bwr=bwr) @ x
-        y[idx] += comb[:, 0]
+        comb = scipy.signal.gausspulse(
+            np.subtract.outer(time, tof) * 1e-6, fc=fc, bw=bw, bwr=bwr
+        ) @ x
+        y_chunk[idx] += comb[:, 0]
+
+    return y_chunk
+
+# Main kernel function with multiprocessing
+def multiply_kernel(x, tspan, tof_matrix, Nel, Nsamp, fc, bw, bwr, n_processes=12):
+    N = Nel * Nel * Nsamp
+    y = np.zeros(N)
+
+    # Define chunks for multiprocessing
+    chunk_size = (Nel * Nel) // n_processes
+    chunks = [
+        (
+            x,
+            tspan,
+            tof_matrix,
+            fc,
+            bw,
+            bwr,
+            i * chunk_size,
+            (i + 1) * chunk_size if i < n_processes - 1 else Nel * Nel,
+            Nsamp,
+            Nel,
+        )
+        for i in range(n_processes)
+    ]
+
+    # Use multiprocessing pool to compute results
+    with Pool(processes=n_processes) as pool:
+        results = pool.map(compute_chunk, chunks)
+
+    # Combine results into the final output
+    offset = 0
+    Nr = len(results)
+    r = 0
+    for result in results:
+        y[offset:offset + result.size] = result
+        offset += result.size
+        print(f"progress = {r/Nr * 100:.2f}")
+        r += 1
+
     return y
