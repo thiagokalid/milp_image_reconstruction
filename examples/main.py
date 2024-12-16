@@ -36,10 +36,7 @@ transducer = Transducer(n_elem=Nelem, fc=fc)
 
 # Create acquisiton object:
 acq = Acquisition(cp, fs, gate_start, gate_end, reflector_grid, transducer)
-H = acq.generate_basis_signal(sparse=True, verbose=True)
-np.savez("fmc_basis.npz", H)
-
-# H = acq.generate_basis_signal("fmc_basis.npz")
+H, _ = acq.generate_basis_signal(sparse=True, verbose=True)
 
 # %% Aplicação do método de reconstrução de imagem:
 

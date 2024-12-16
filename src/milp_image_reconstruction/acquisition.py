@@ -4,11 +4,16 @@ from .transducer import Transducer
 import numpy as np
 import scipy
 from numpy import ndarray
+from numba import njit, prange
 
 __all__ = ["Acquisition"]
 
+
+
 class Acquisition:
-    def __init__(self, cp: float, fs: float, gate_start: float, gate_end: float, reflector_grid: ReflectorGrid, transducer: Transducer):
+    def __init__(self, cp: float, fs: float, gate_start: float, gate_end: float, reflector_grid: ReflectorGrid,
+                 transducer: Transducer):
+        self.index_matrix = None
         self.fmc_basis = None
         self.fmc_list = list()
         self.reflector_grid = reflector_grid
@@ -23,76 +28,35 @@ class Acquisition:
         # There is no punctual reflectors
         self.xr, self.zr = [], []
 
-    def generate_basis_signal(self, verbose=True, sparse=False, path=None):
-        if path is None:
-            if not sparse:
-                self.fmc_basis = np.zeros(shape=(
+    def generate_basis_signal(self, verbose=True, linear_operator: bool = False):
+        if not linear_operator:
+            self.fmc_basis = np.zeros(shape=(
                 self.n_samples, self.transducer.n_elem, self.transducer.n_elem, self.reflector_grid.n_reflectors))
-                i, j, k = -1, -1, -1
-                for i, (x_transm, z_transm) in enumerate(zip(*self.transducer.get_coords())):
-                    for j, (x_receiver, z_receiver) in enumerate(zip(*self.transducer.get_coords())):
-                        for k, (xr, zr) in enumerate(zip(*self.reflector_grid.get_coords())):
-                            dist1 = np.sqrt((x_transm - xr) ** 2 + (z_transm - zr) ** 2)
-                            dist2 = np.sqrt((xr - x_receiver) ** 2 + (zr - z_receiver) ** 2)
-                            tof = dist1 / self.cp + dist2 / self.cp
-                            self.fmc_basis[:, i, j, k] = self.transducer.get_signal(self.tspan, tof)
 
-                if verbose:
-                    print(f"progress = {(i + 1) / self.transducer.n_elem * 100:.2f}")
-                return np.reshape(self.fmc_basis, (
-                self.n_samples * self.transducer.n_elem * self.transducer.n_elem, self.reflector_grid.n_reflectors),
-                                  order='F')
-            else:
-                self.fmc_basis = scipy.sparse.csc_array((
-                                                        self.n_samples * self.transducer.n_elem * self.transducer.n_elem,
-                                                        self.reflector_grid.n_reflectors))
+            for i, (x_transm, z_transm) in enumerate(zip(*self.transducer.get_coords())):
+                for j, (x_receiver, z_receiver) in enumerate(zip(*self.transducer.get_coords())):
+                    for k, (xr, zr) in enumerate(zip(*self.reflector_grid.get_coords())):
+                        dist1 = np.sqrt((x_transm - xr) ** 2 + (z_transm - zr) ** 2)
+                        dist2 = np.sqrt((xr - x_receiver) ** 2 + (zr - z_receiver) ** 2)
+                        tof = dist1 / self.cp + dist2 / self.cp
+                        self.fmc_basis[:, i, j, k] = self.transducer.get_signal(self.tspan, tof)
 
-                Nt = 70
-                Nel = self.transducer.n_elem
-                Npx = self.reflector_grid.n_reflectors
-                th = Nt * 1 / self.fs * 1e6
-                Ts = 1 / self.fs * 1e6
-                for k, (xr, zr) in enumerate(zip(*self.reflector_grid.get_coords())):
-                    for j, (x_transm, z_transm) in enumerate(zip(*self.transducer.get_coords())):
-                        for i, (x_receiver, z_receiver) in enumerate(zip(*self.transducer.get_coords())):
+            if verbose:
+                print(f"progress = {(i + 1) / self.transducer.n_elem * 100:.2f}")
 
-                            dist1 = np.sqrt((x_transm - xr) ** 2 + (z_transm - zr) ** 2)
-                            dist2 = np.sqrt((xr - x_receiver) ** 2 + (zr - z_receiver) ** 2)
-                            tof = dist1 / self.cp + dist2 / self.cp
-
-                            if (tof - th / 2) < self.tspan[0]:
-                                beg_t = self.tspan[0]
-                                end_t = tof + th / 2
-                            elif (tof + th / 2) >= self.tspan[-1]:
-                                beg_t = tof - th / 2
-                                end_t = self.tspan[-1]
-                            else:
-                                beg_t = tof - th / 2
-                                end_t = tof + th / 2
-
-                            beg_idx = 0 + (j * Nel + i) * len(self.tspan)
-                            end_idx = len(self.tspan) + (j * Nel + i) * len(self.tspan)
-
-                            shift = int(np.round(beg_t * 1e-6 * self.fs))
-
-                            beg_idx, end_idx = int(beg_idx), int(end_idx)
-
-                            reduced_tspan = np.arange(beg_t, end_t, Ts)
-                            Ntot = len(reduced_tspan)
-
-                            self.fmc_basis[beg_idx + shift: beg_idx + shift + Ntot, k] = self.transducer.get_signal(
-                                reduced_tspan, tof)
-
-                    if verbose:
-                        print(f"progress = {(k + 1) / Npx * 100:.2f} %")
-                return self.fmc_basis
-        elif path is str:
-            self.fmc_basis = np.load(path)
-            return self.fmc_basis
-
+            self.H = np.reshape(self.fmc_basis,
+                                newshape=(self.n_samples, self.transducer.n_elem, self.transducer.n_elem, self.reflector_grid.n_reflectors),
+                                order='F')
+            return self.H, self.H.T
         else:
-            raise NotImplementedError
+            Nt = 70
+            self.tof_matrix = self.__generate_tof_matrix(Nt)
+            print("TOF matrix generated.")
 
+            self.H = lambda x: self.__generate_linear_operator(x, self.tof_matrix)
+            #self.HT = lambda x: self.__generate_transposed_operator(x, self.tof_matrix)
+
+            return self.H, 1
 
     def generate_signal(self, xr: float, zr: float) -> ndarray:
         fmc = np.zeros(
@@ -121,7 +85,7 @@ class Acquisition:
             sampled_fmc += np.random.randn(*sampled_fmc.shape) * noise_std
         return sampled_fmc
 
-    def generate_signals(self, xr: list = None, zr: list= None, noise_std:float = 0) -> ndarray:
+    def generate_signals(self, xr: list = None, zr: list = None, noise_std: float = 0) -> ndarray:
         if not (xr is None and zr is None):
             return self._generate_signals(xr, zr, noise_std)
 
@@ -134,9 +98,7 @@ class Acquisition:
         else:
             raise ValueError("xr, zr are invalid.")
 
-
-
-    def add_random_reflectors(self, n_reflectors: int, method: str="on-grid", seed = None) -> None:
+    def add_random_reflectors(self, n_reflectors: int, method: str = "on-grid", seed=None) -> None:
         if isinstance(seed, (int, float)):
             np.random.seed(seed)
         x, z = self.reflector_grid.get_coords()
@@ -156,3 +118,65 @@ class Acquisition:
     def add_reflector(self, xr: float, zr: float) -> None:
         self.xr.append(xr)
         self.zr.append(zr)
+
+
+    def __generate_tof_matrix(self, Nt):
+        th = Nt * 1 / self.fs * 1e6
+        Ts = 1 / self.fs * 1e6
+        tof_matrix = (np.zeros
+                      (shape=(self.transducer.n_elem, self.transducer.n_elem, self.reflector_grid.n_reflectors)))
+
+        x_transd, z_transd = self.transducer.get_coords()
+        x_reflector, z_reflector = self.reflector_grid.get_coords()
+        coord_transd = np.vstack((x_transd, z_transd)).T
+        coord_reflector = np.array([x_reflector, z_reflector]).T
+
+        dist = scipy.spatial.distance.cdist(XA=coord_transd,
+                                            XB=coord_reflector)
+
+        tof_matrix = tof_kernel(self.transducer.n_elem, self.reflector_grid.n_reflectors, self.cp, dist)
+
+        return tof_matrix
+
+    def __generate_linear_operator(self, x, tof_matrix: ndarray) -> ndarray:
+        Nel = self.transducer.n_elem
+        Nsamp = len(self.tspan)
+        return multiply_kernel(x,
+                               self.tspan,
+                               tof_matrix,
+                               Nel, Nsamp,
+                               self.transducer.fc, self.transducer.bw, self.transducer.bwr)
+
+
+
+
+@njit(parallel=True, cache=True)
+def tof_kernel(Nel, Npx, cp, dist):
+    tof = np.zeros(shape=(Nel, Nel, Npx))
+    for n in prange(Nel * Nel * Npx):
+        # Calculate indices (i, j, k) from flattened index n
+        k = n // (Nel * Nel)               # Reflector index
+        rem = n % (Nel * Nel)
+        i = rem // Nel                     # Transducer i index
+        j = rem % Nel                      # Transducer j index
+
+        tof[i, j, k] = dist[i, k]/cp + dist[j, k]/cp
+    return tof
+
+
+def multiply_kernel(x, tspan, tof_matrix, Nel, Nsamp, fc, bw, bwr):
+    N = Nel * Nel * Nsamp
+    y = np.zeros(N)
+    t = np.arange(0, Nsamp)
+
+    for n in range(Nel * Nel):
+        i = n % Nel
+        j = n // Nel
+
+        idx = n * Nsamp + t
+        time = tspan
+        tof = tof_matrix[i, j, :]
+
+        comb = scipy.signal.gausspulse(np.subtract.outer(time, tof) * 1e-6, fc=fc, bw=bw, bwr=bwr) @ x
+        y[idx] += comb[:, 0]
+    return y
