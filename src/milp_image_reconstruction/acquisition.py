@@ -1,11 +1,12 @@
 from .reflector_grid import ReflectorGrid
 from .transducer import Transducer
+from .utils import _parallel_generate_sparse_signal
 
 import numpy as np
-import scipy
 from numpy import ndarray
 
 __all__ = ["Acquisition"]
+
 
 class Acquisition:
     def __init__(self, cp: float, fs: float, gate_start: float, gate_end: float, reflector_grid: ReflectorGrid, transducer: Transducer):
@@ -22,6 +23,7 @@ class Acquisition:
 
         # There is no punctual reflectors
         self.xr, self.zr = [], []
+
 
     def generate_basis_signal(self, verbose=True, sparse=False, path=None):
         if path is None:
@@ -43,49 +45,9 @@ class Acquisition:
                 self.n_samples * self.transducer.n_elem * self.transducer.n_elem, self.reflector_grid.n_reflectors),
                                   order='F')
             else:
-                self.fmc_basis = scipy.sparse.csc_array((
-                                                        self.n_samples * self.transducer.n_elem * self.transducer.n_elem,
-                                                        self.reflector_grid.n_reflectors))
-
-                Nt = 70
-                Nel = self.transducer.n_elem
-                Npx = self.reflector_grid.n_reflectors
-                th = Nt * 1 / self.fs * 1e6
-                Ts = 1 / self.fs * 1e6
-                for k, (xr, zr) in enumerate(zip(*self.reflector_grid.get_coords())):
-                    for j, (x_transm, z_transm) in enumerate(zip(*self.transducer.get_coords())):
-                        for i, (x_receiver, z_receiver) in enumerate(zip(*self.transducer.get_coords())):
-
-                            dist1 = np.sqrt((x_transm - xr) ** 2 + (z_transm - zr) ** 2)
-                            dist2 = np.sqrt((xr - x_receiver) ** 2 + (zr - z_receiver) ** 2)
-                            tof = dist1 / self.cp + dist2 / self.cp
-
-                            if (tof - th / 2) < self.tspan[0]:
-                                beg_t = self.tspan[0]
-                                end_t = tof + th / 2
-                            elif (tof + th / 2) >= self.tspan[-1]:
-                                beg_t = tof - th / 2
-                                end_t = self.tspan[-1]
-                            else:
-                                beg_t = tof - th / 2
-                                end_t = tof + th / 2
-
-                            beg_idx = 0 + (j * Nel + i) * len(self.tspan)
-                            end_idx = len(self.tspan) + (j * Nel + i) * len(self.tspan)
-
-                            shift = int(np.round(beg_t * 1e-6 * self.fs))
-
-                            beg_idx, end_idx = int(beg_idx), int(end_idx)
-
-                            reduced_tspan = np.arange(beg_t, end_t, Ts)
-                            Ntot = len(reduced_tspan)
-
-                            self.fmc_basis[beg_idx + shift: beg_idx + shift + Ntot, k] = self.transducer.get_signal(
-                                reduced_tspan, tof)
-
-                    if verbose:
-                        print(f"progress = {(k + 1) / Npx * 100:.2f} %")
-                return self.fmc_basis
+                self.fmc_basis = None
+                self.H = _parallel_generate_sparse_signal(self.transducer.n_elem, self.transducer.get_coords(), self.transducer.fc, self.transducer.bwr, self.transducer.bw, self.reflector_grid.n_reflectors, self.reflector_grid.get_coords(), self.fs, self.cp, self.tspan, self.n_samples)
+                return self.H
         elif path is str:
             self.fmc_basis = np.load(path)
             return self.fmc_basis

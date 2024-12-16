@@ -20,16 +20,16 @@ import numpy as np
 cp = 5 # Velocidade de propagação no meio em mm/us
 gate_start = 0  # Início do gate em us
 gate_end = 8  # Fim do gate em us
-fc = 5e6  # Frequência central do transdutor em Hz
+fc = 1e6  # Frequência central do transdutor em Hz
 fs = fc * 10  # Frequência de amostragem em Hz
-Nelem = 64
+Nelem = 32
 
 #%% Criação dos Objetos para Simulação:
 
 # Create punctual reflectors grid:
-width = 2
-height = 2
-reflector_grid = ReflectorGrid(width=width, height=height, xres=20e-3, zres=20e-3)
+width = 6
+height = 7
+reflector_grid = ReflectorGrid(width=width, height=height, xres=.2, zres=.2)
 
 # Create transducer:
 transducer = Transducer(n_elem=Nelem, fc=fc)
@@ -37,16 +37,16 @@ transducer = Transducer(n_elem=Nelem, fc=fc)
 # Create acquisiton object:
 acq = Acquisition(cp, fs, gate_start, gate_end, reflector_grid, transducer)
 H = acq.generate_basis_signal(sparse=True, verbose=True)
-np.savez("fmc_basis.npz", H)
+#np.savez("fmc_basis.npz", H)
 
 # H = acq.generate_basis_signal("fmc_basis.npz")
 
 # %% Aplicação do método de reconstrução de imagem:
 
 # # Localização do refletor que deseja-se reconstruir em mm:
-# acq.add_random_reflectors(2, method="off-grid", seed=1)
-acq.add_reflector(.37, 1.37)
-acq.add_reflector(.5, 1)
+acq.add_random_reflectors(5, method="off-grid", seed=1)
+# acq.add_reflector(.37, 1.37)
+# acq.add_reflector(.5, 1)
 
 simulated_fmc = acq.generate_signals(noise_std=0.1)
 
@@ -61,7 +61,7 @@ results = []
 method_names = []
 
 # %% MILP
-
+#
 # print("L1 begin.")
 # result_milp = milp_method(
 #     np.reshape(acq.fmc_basis, H.shape, order='C'),
@@ -110,7 +110,7 @@ method_names = []
 print("Laroche begin.")
 mumax = 2 * np.max(np.abs(H.T @ simulated_flatten_fmc))
 mu1 = .6 * mumax
-mu2 = 0
+mu2 = 1000
 result_laroche = laroche_method(
     H,
     simulated_flatten_fmc,
