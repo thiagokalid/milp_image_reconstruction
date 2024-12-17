@@ -11,17 +11,13 @@ from scipy.optimize import milp, LinearConstraint
 from scipy import sparse
 from numpy import ndarray
 
-
 from pylops.optimization.sparsity import fista
 from scipy.sparse.linalg import aslinearoperator
 from scipy.sparse import csc_array, csc_matrix
 
 # Import of custom libraries:
 from ._utils import _transform_dense_to_sparse_matrix, _transform_dense_to_sparse_array
-from .irls import *
 from ._imaging_result import ImagingResult
-
-__all__ = ["passarin_method", "milp_method", "irls_method"]
 
 def passarin_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, damp=0):
     t0 = time.time()
@@ -35,17 +31,17 @@ def passarin_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tup
     message = "Solves least-squares" if istop == 1 else "Approximation of least-squares"
 
     result = ImagingResult(
-        x = x,
-        img = img.T,
-        cost_fun = r1norm,
-        residue = residue,
-        success = success,
-        status = istop,
-        message = message,
-        elapsed_time = time.time() - t0,
-        niter = itn,
-        metric = r1norm**2,
-        metric_name = "SSE"
+        x=x,
+        img=img.T,
+        cost_fun=r1norm,
+        residue=residue,
+        success=success,
+        status=istop,
+        message=message,
+        elapsed_time=time.time() - t0,
+        niter=itn,
+        metric=r1norm ** 2,
+        metric_name="SSE"
     )
 
     return result
@@ -87,7 +83,6 @@ def milp_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple):
         scipy.sparse.hstack((-H, z_matrix, ei_matrix))
     ])
 
-
     b_l = np.vstack((
         g.toarray(),
         -g.toarray()
@@ -117,19 +112,20 @@ def milp_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple):
     residue[-N:] *= -1
 
     result = ImagingResult(
-        x = result.x,
-        img = img.T,
-        cost_fun = result.fun,
-        residue = residue,
-        success = result.success,
-        status = result.status,
-        message = result.message,
-        elapsed_time = time.time() - t0,
-        metric = sae,
-        metric_name = "SAE"
+        x=result.x,
+        img=img.T,
+        cost_fun=result.fun,
+        residue=residue,
+        success=result.success,
+        status=result.status,
+        message=result.message,
+        elapsed_time=time.time() - t0,
+        metric=sae,
+        metric_name="SAE"
     )
 
     return result
+
 
 def irls_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, maxiter=100, tolLower=1e-2,
                 epsilon=1e-3, lbd=1e-3, method="minres") -> ImagingResult:
@@ -139,9 +135,6 @@ def irls_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, 
     xguess = linalg.lsqr(A, b)[0]
 
     match method:
-        case "minres":
-            x, residue, cost_fun, converged, x_log, cost_fun_log\
-                = irls_minres(A, b, maxiter=maxiter, xguess=xguess, tolLower=tolLower, epsilon=epsilon, lbd=lbd)
         case "pylops":
             Aop = pylops.MatrixMult(basis_signal, dtype="float64")
             x, x_log = pylops.irls(Aop, b, threshR=False, epsR=epsilon, epsI=lbd, kind="data", nouter=maxiter)
@@ -157,19 +150,20 @@ def irls_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, 
     result = ImagingResult(
         x=x,
         img=img,
-        cost_fun = cost_fun,
-        converged = converged,
-        elapsed_time = time.time() - t0,
+        cost_fun=cost_fun,
+        converged=converged,
+        elapsed_time=time.time() - t0,
         residue=residue,
-        x_log = x_log,
-        cost_fun_log = cost_fun_log,
-        metric = np.sum(np.abs(cost_fun)),
+        x_log=x_log,
+        cost_fun_log=cost_fun_log,
+        metric=np.sum(np.abs(cost_fun)),
         metric_name="SAE"
     )
     return result
 
+
 def laroche_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, maxiter=100, tolLower=1e-2,
-                epsilon=1e-3, lbd=1e-3, diff_ord=1, mu1=1, mu2=1) -> ImagingResult:
+                   epsilon=1e-3, lbd=1e-3, diff_ord=1, mu1=1, mu2=1) -> ImagingResult:
     t0 = time.time()
     A = basis_signal
     N, M = basis_signal.shape
@@ -180,9 +174,9 @@ def laroche_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tupl
     Dvec = np.zeros(shape=(M, 1), dtype=float)
     match diff_ord:
         case 1:
-            Dmask = [1, -1] # First-order difference mask
+            Dmask = [1, -1]  # First-order difference mask
         case 2:
-            Dmask = [1, -2, 1] # Second-order difference mask
+            Dmask = [1, -2, 1]  # Second-order difference mask
         case _:
             Dmask = [1]
 
@@ -198,26 +192,23 @@ def laroche_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tupl
     ye = np.zeros(shape=(R, 1))
     ye[:len(b), 0] = b[:]
 
-
     Aop = pylops.MatrixMult(He, dtype="float64")
 
     x, iter, cost_fun = fista(Aop, ye[:, 0], x0=xguess, eps=mu1)
 
     img = np.reshape(x, newshape=imgsize)
-    residue = b - A@x
+    residue = b - A @ x
 
     result = ImagingResult(
         x=x,
         img=img.T,
-        cost_fun = cost_fun[-1],
+        cost_fun=cost_fun[-1],
         metric=cost_fun[-1],
         metric_name="SSE",
-        cost_fun_log = cost_fun,
-        elapsed_time = time.time() - t0,
+        cost_fun_log=cost_fun,
+        elapsed_time=time.time() - t0,
         residue=residue
     )
-
-
 
     return result
 
@@ -228,12 +219,12 @@ def watt_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, 
     b = sampled_signal
     alpha = alpha_perc / 100
 
-    U, s, Vh = scipy.sparse.linalg.svds(A, k=(A.shape[1]-1))
+    U, s, Vh = scipy.sparse.linalg.svds(A, k=(A.shape[1] - 1))
 
     maxS = np.max(s)
     s_regularized = np.zeros_like(s)
     for i in range(s.shape[0]):
-        s_regularized[i] = s[i] / (s[i]**2 + (alpha * maxS)**2)
+        s_regularized[i] = s[i] / (s[i] ** 2 + (alpha * maxS) ** 2)
 
     newP = Vh.T @ sparse.diags_array(s_regularized) @ U.T
 

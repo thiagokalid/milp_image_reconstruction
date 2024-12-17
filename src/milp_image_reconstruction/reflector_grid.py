@@ -2,8 +2,9 @@ import numpy as np
 
 __all__ = ['ReflectorGrid']
 
+
 class ReflectorGrid:
-    def __init__(self, width: float, height: float, xres: float=.1, zres: float=.1):
+    def __init__(self, width: float, height: float, xres: float = .1, zres: float = .1):
         self.width = width
         self.height = height
         self.xres = xres
@@ -15,13 +16,13 @@ class ReflectorGrid:
         self.zv = np.ravel(self.zv)
         self.n_reflectors = len(self.xv)
 
-    def get_coords(self, offset: [float, float]=(0, 0), i: int=-1):
+    def get_coords(self, offset: [float, float] = (0, 0), i: int = -1):
         if i == -1:
             return self.xv - offset[0], self.zv - offset[1]
         else:
             return self.xv[i] - offset[0], self.zv[i] - offset[1]
 
-    def get_extent(self, offset: [float, float]=(0, 0)) -> [float, float, float, float]:
+    def get_extent(self, offset: [float, float] = (0, 0)) -> [float, float, float, float]:
         return [
             self.xspan[0] - offset[0], self.xspan[-1] + offset[0],
             self.zspan[-1] + offset[1], self.zspan[0] - offset[1]

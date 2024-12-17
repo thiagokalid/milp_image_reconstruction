@@ -2,6 +2,7 @@ from scipy._lib._util import _RichResult
 
 __all__ = ["ImagingResult"]
 
+
 class ImagingResult(_RichResult):
     """
     Represents the optimization result.
