@@ -54,7 +54,8 @@ class Acquisition:
             Npx = self.reflector_grid.n_reflectors
 
             self.H = LinearOperator(shape=(N, Npx),
-                                    matvec=lambda x: self.__mat_vec_mult(x, self.tof_matrix))
+                                    matvec=lambda x: self.__mat_vec_mult(x, self.tof_matrix),
+                                    rmatvec=lambda x: self.__t_mat_vec_mult(x, self.tof_matrix))
 
         return self.H
 
@@ -128,10 +129,11 @@ class Acquisition:
     def __t_mat_vec_mult(self, x, tof_matrix: ndarray) -> ndarray:
         Nel = self.transducer.n_elem
         Nsamp = len(self.tspan)
-        return multiply_kernel(x,
+        Npx = self.reflector_grid.n_reflectors
+        return t_multiply_kernel(x,
                                self.tspan,
                                tof_matrix,
-                               Nel, Nsamp,
+                               Nel, Nsamp, Npx,
                                self.transducer.fc, self.transducer.bw, self.transducer.bwr)
 
 
@@ -164,5 +166,19 @@ def multiply_kernel(x, tspan, tof_matrix, Nel, Nsamp, fc, bw, bwr):
         time_comb = np.subtract.outer(tspan, tof) * 1e-6
         signal_comb = gausspulse(time_comb, fc=fc, bw=bw, bwr=bwr) @ x
         y[idx] += np.ravel(signal_comb)
+
+    return y
+
+def t_multiply_kernel(x, tspan, tof_matrix, Nel, Nsamp, Npx, fc, bw, bwr):
+    y = np.zeros(Npx)
+
+    for n in range(Npx):
+        tof = np.ravel(tof_matrix[:, :, n], order='C')
+        M = len(tof)
+
+        time_comb = np.tile(tspan, reps=(M, 1))
+        time_comb = np.array([(time_comb[i, :] - tof[i]) * 1e-6 for i in range(M)], dtype=float)
+        signal_comb = np.ravel(gausspulse(time_comb, fc=fc, bw=bw, bwr=bwr), order="C") @ x
+        y[n] = np.sum(signal_comb)
 
     return y
