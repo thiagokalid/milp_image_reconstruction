@@ -24,14 +24,15 @@ Nelem = 64
 # Create punctual reflectors grid:
 width = 2
 height = 2
-reflector_grid = ReflectorGrid(width=width, height=height, xres=20e-2, zres=20e-3)
+reflector_grid = ReflectorGrid(width=width, height=height, xres=20e-2, zres=20e-2)
 
 # Create transducer:
 transducer = Transducer(n_elem=Nelem, fc=fc)
 
 # Create acquisiton object:
 acq = Acquisition(cp, fs, gate_start, gate_end, reflector_grid, transducer)
-H, Ht = acq.generate_basis_signal(dense=False)
+H_linop = acq.generate_basis_signal(linear_operator=True)
+H_dense = acq.generate_basis_signal(linear_operator=False)
 
 # Extract useful numbers:
 Npx = reflector_grid.n_reflectors
@@ -39,9 +40,12 @@ Nt = acq.n_samples
 N = Nelem * Nelem * Nt
 
 # Example of a vector:
-d = np.zeros((Npx, 1))
-d[0] = 1
+d = np.random.randn(Npx)
 
 t0 = time.time()
-h = H(d)
+h_linop = H_linop @ d
+print(f"Elapsed time: {time.time() - t0:.2f}. Number of elements on matrix: {N * Npx:.2E}")
+
+t0 = time.time()
+h_dense = H_dense @ d
 print(f"Elapsed time: {time.time() - t0:.2f}. Number of elements on matrix: {N * Npx:.2E}")

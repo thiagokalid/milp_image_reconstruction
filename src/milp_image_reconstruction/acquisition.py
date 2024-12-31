@@ -6,6 +6,7 @@ import numpy as np
 import scipy
 from numpy import ndarray
 from numba import njit, prange
+from scipy.sparse.linalg import LinearOperator
 
 __all__ = ["Acquisition"]
 
@@ -32,16 +33,30 @@ class Acquisition:
         # Matrix which contains all TOFs
         self.tof_matrix = None
 
-    def generate_basis_signal(self, dense: bool = True):
+    def generate_basis_signal(self, linear_operator: bool = False):
         self.tof_matrix = self.__generate_tof_matrix()
 
-        if dense:
-            raise NotImplementedError
+        if not linear_operator:
+            self.fmc_basis = np.zeros(shape=(
+                self.n_samples, self.transducer.n_elem, self.transducer.n_elem, self.reflector_grid.n_reflectors))
+            for i, (x_transm, z_transm) in enumerate(zip(*self.transducer.get_coords())):
+                for j, (x_receiver, z_receiver) in enumerate(zip(*self.transducer.get_coords())):
+                    for k, (xr, zr) in enumerate(zip(*self.reflector_grid.get_coords())):
+                        dist1 = np.sqrt((x_transm - xr) ** 2 + (z_transm - zr) ** 2)
+                        dist2 = np.sqrt((xr - x_receiver) ** 2 + (zr - z_receiver) ** 2)
+                        tof = dist1 / self.cp + dist2 / self.cp
+                        self.fmc_basis[:, i, j, k] = self.transducer.get_signal(self.tspan, tof)
+            self.H = np.reshape(self.fmc_basis, (
+                self.n_samples * self.transducer.n_elem * self.transducer.n_elem, self.reflector_grid.n_reflectors),
+                              order='F')
         else:
-            self.H = lambda x: self.__mat_vec_mult(x, self.tof_matrix)
-            self.Ht = 0
+            N = len(self.tspan) * self.transducer.n_elem**2
+            Npx = self.reflector_grid.n_reflectors
 
-        return self.H, self.Ht
+            self.H = LinearOperator(shape=(N, Npx),
+                                    matvec=lambda x: self.__mat_vec_mult(x, self.tof_matrix))
+
+        return self.H
 
     def generate_signals(self, noise_std: float = 0) -> ndarray:
         sampled_fmc = []
@@ -110,6 +125,15 @@ class Acquisition:
                                Nel, Nsamp,
                                self.transducer.fc, self.transducer.bw, self.transducer.bwr)
 
+    def __t_mat_vec_mult(self, x, tof_matrix: ndarray) -> ndarray:
+        Nel = self.transducer.n_elem
+        Nsamp = len(self.tspan)
+        return multiply_kernel(x,
+                               self.tspan,
+                               tof_matrix,
+                               Nel, Nsamp,
+                               self.transducer.fc, self.transducer.bw, self.transducer.bwr)
+
 
 @njit(parallel=True, cache=True)
 def tof_kernel(Nel, Npx, cp, dist):
@@ -130,7 +154,6 @@ def multiply_kernel(x, tspan, tof_matrix, Nel, Nsamp, fc, bw, bwr):
     y = np.zeros(N)
     t = np.arange(0, Nsamp)
 
-    #tspan = np.arnage(0, 5e-6, 1/125e6)
     for n in range(Nel * Nel):
         i = n % Nel
         j = n // Nel
@@ -138,7 +161,8 @@ def multiply_kernel(x, tspan, tof_matrix, Nel, Nsamp, fc, bw, bwr):
         idx = n * Nsamp + t
         tof = tof_matrix[i, j, :]
 
-        comb = gausspulse(np.subtract.outer(tspan, tof) * 1e-6, fc=fc, bw=bw, bwr=bwr) @ x
-        y[idx] += comb[:, 0]
+        time_comb = np.subtract.outer(tspan, tof) * 1e-6
+        signal_comb = gausspulse(time_comb, fc=fc, bw=bw, bwr=bwr) @ x
+        y[idx] += np.ravel(signal_comb)
 
     return y
