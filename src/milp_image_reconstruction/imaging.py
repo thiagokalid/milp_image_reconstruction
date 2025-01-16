@@ -19,11 +19,12 @@ from scipy.sparse import csc_array, csc_matrix
 from ._utils import _transform_dense_to_sparse_matrix, _transform_dense_to_sparse_array
 from ._imaging_result import ImagingResult
 
-def passarin_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, damp=0):
+def passarin_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tuple, damp=0, verbose=True):
     t0 = time.time()
     A = basis_signal
     b = sampled_signal
-    x, istop, itn, r1norm = linalg.lsqr(A, b, damp=damp)[:4]
+    print("Before L2 based method.")
+    x, istop, itn, r1norm = linalg.lsqr(A, b, damp=damp, show=verbose, iter_lim=10)[:4]
     img = np.reshape(x, newshape=imgsize)
     residue = b - A @ x
 
@@ -194,7 +195,8 @@ def laroche_method(basis_signal: ndarray, sampled_signal: ndarray, imgsize: tupl
 
     Aop = pylops.MatrixMult(He, dtype="float64")
 
-    x, iter, cost_fun = fista(Aop, ye[:, 0], x0=xguess, eps=mu1)
+    x, iter, cost_fun = fista(Aop, ye[:, 0], x0=xguess, eps=mu1, show=True)
+    print("Iter: ", iter)
 
     img = np.reshape(x, newshape=imgsize)
     residue = b - A @ x

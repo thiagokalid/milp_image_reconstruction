@@ -4,12 +4,12 @@ __all__ = ['ReflectorGrid']
 
 
 class ReflectorGrid:
-    def __init__(self, width: float, height: float, xres: float = .1, zres: float = .1):
+    def __init__(self, width: float, height: float, xres: float = .1, zres: float = .1, zoffset: float = 0., xoffset: float = 0.,):
         self.width = width
         self.height = height
         self.xres = xres
         self.zres = zres
-        self.xspan, self.zspan = np.arange(-width / 2, width / 2 + xres, xres), np.arange(0, height + zres, zres)
+        self.xspan, self.zspan = np.arange(xoffset - width / 2, xoffset + width / 2 + xres, xres), np.arange(zoffset + 0, zoffset + height + zres, zres)
         self.imgsize = len(self.xspan), len(self.zspan)
         self.xv, self.zv = np.meshgrid(self.xspan, self.zspan, indexing='ij')
         self.xv = np.ravel(self.xv)

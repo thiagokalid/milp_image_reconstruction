@@ -7,6 +7,9 @@ import scipy
 from numpy import ndarray
 from numba import njit, prange
 from scipy.sparse.linalg import LinearOperator
+import cupy as cp
+import cupyx
+from multiprocessing import Pool
 
 __all__ = ["Acquisition"]
 
@@ -35,32 +38,37 @@ class Acquisition:
 
     def generate_basis_signal(self, linear_operator: bool = False):
         self.tof_matrix = self.__generate_tof_matrix()
+        Npx = self.reflector_grid.n_reflectors
+        Nel = self.transducer.n_elem
+        Nt = self.n_samples
+        N = Nel ** 2 * Nt
 
         if not linear_operator:
-            self.fmc_basis = np.zeros(shape=(
-                self.n_samples, self.transducer.n_elem, self.transducer.n_elem, self.reflector_grid.n_reflectors))
-            for i, (x_transm, z_transm) in enumerate(zip(*self.transducer.get_coords())):
-                for j, (x_receiver, z_receiver) in enumerate(zip(*self.transducer.get_coords())):
-                    for k, (xr, zr) in enumerate(zip(*self.reflector_grid.get_coords())):
-                        dist1 = np.sqrt((x_transm - xr) ** 2 + (z_transm - zr) ** 2)
-                        dist2 = np.sqrt((xr - x_receiver) ** 2 + (zr - z_receiver) ** 2)
-                        tof = dist1 / self.cp + dist2 / self.cp
-                        self.fmc_basis[:, i, j, k] = self.transducer.get_signal(self.tspan, tof)
-            self.H = np.reshape(self.fmc_basis, (
-                self.n_samples * self.transducer.n_elem * self.transducer.n_elem, self.reflector_grid.n_reflectors),
-                              order='F')
+            self.fmc_basis = np.zeros(shape=(Nt, Nel, Nel, Npx))
+            for n in prange(Nel * Nel * Npx):
+                # Calculate indices (i, j, k) from flattened index n
+                k = n // (Nel * Nel)  # Reflector index
+                rem = n % (Nel * Nel)
+                i = rem // Nel  # Transducer i index
+                j = rem % Nel  # Transducer j index
+
+                tof = float(self.tof_matrix[i, j, k])
+                self.fmc_basis[:, i, j, k] = self.transducer.get_signal(self.tspan, tof)
+            self.H = np.reshape(self.fmc_basis, (N, Npx), order='F')
         else:
             N = len(self.tspan) * self.transducer.n_elem**2
             Npx = self.reflector_grid.n_reflectors
 
             self.H = LinearOperator(shape=(N, Npx),
-                                    matvec=lambda x: self.__mat_vec_mult(x, self.tof_matrix),
-                                    rmatvec=lambda x: self.__t_mat_vec_mult(x, self.tof_matrix))
+                                    matvec=lambda x: self._mat_vec_mult(x, self.tof_matrix),
+                                    rmatvec=lambda x: self._t_mat_vec_mult(x, self.tof_matrix))
 
         return self.H
 
     def generate_signals(self, noise_std: float = 0) -> ndarray:
-        sampled_fmc = []
+        Nt = len(self.tspan)
+        Nel= self.transducer.n_elem
+        sampled_fmc = np.zeros(shape=(Nt, Nel, Nel))
         for xi, zi in zip(self.xr, self.zr):
             sampled_fmc += self.__generate_signal(xi, zi)
 
@@ -104,7 +112,7 @@ class Acquisition:
             j = -1
         return fmc
 
-    def __generate_tof_matrix(self):
+    def __generate_tof_matrix(self) -> np.ndarray:
         x_transd, z_transd = self.transducer.get_coords()
         x_reflector, z_reflector = self.reflector_grid.get_coords()
         coord_transd = np.vstack((x_transd, z_transd)).T
@@ -117,7 +125,7 @@ class Acquisition:
 
         return tof_matrix
 
-    def __mat_vec_mult(self, x, tof_matrix: ndarray) -> ndarray:
+    def _mat_vec_mult(self, x, tof_matrix: ndarray) -> ndarray:
         Nel = self.transducer.n_elem
         Nsamp = len(self.tspan)
         return multiply_kernel(x,
@@ -126,7 +134,7 @@ class Acquisition:
                                Nel, Nsamp,
                                self.transducer.fc, self.transducer.bw, self.transducer.bwr)
 
-    def __t_mat_vec_mult(self, x, tof_matrix: ndarray) -> ndarray:
+    def _t_mat_vec_mult(self, x, tof_matrix: ndarray) -> ndarray:
         Nel = self.transducer.n_elem
         Nsamp = len(self.tspan)
         Npx = self.reflector_grid.n_reflectors
@@ -151,34 +159,55 @@ def tof_kernel(Nel, Npx, cp, dist):
     return tof
 
 
-def multiply_kernel(x, tspan, tof_matrix, Nel, Nsamp, fc, bw, bwr):
-    N = Nel * Nel * Nsamp
-    y = np.zeros(N)
-    t = np.arange(0, Nsamp)
+# Custom Gauss pulse implemented on the CPU
+def gausspulse_cpu(t, fc, bw, bwr=-6):
+    t = np.array(t, dtype=np.float32)
+    b = bw / (2.0 * np.sqrt(np.log(2.0)))
+    envelope = np.exp(-np.pi * b**2 * t**2)
+    chirp = np.cos(2 * np.pi * fc * t)
+    return envelope * chirp
 
-    for n in range(Nel * Nel):
+# Worker function for multiply_kernel
+def process_chunk_multiply(args):
+    """Worker function for multiply_kernel chunks."""
+    chunk_indices, x, tspan, tof_matrix, Nel, Nsamp, fc, bw, bwr = args
+    N = len(chunk_indices) * Nsamp
+    y_chunk = np.zeros(N, dtype=np.float32)
+    t = np.arange(0, Nsamp, dtype=int)
+
+    for n in chunk_indices:
         i = n % Nel
         j = n // Nel
+        idx = (n - chunk_indices[0]) * Nsamp + t
+        tof = tof_matrix[i, j, :].astype(np.float32)
+        time_comb = (np.subtract.outer(tspan, tof)) * 1e-6
+        signal_comb = np.dot(gausspulse_cpu(time_comb, fc, bw, bwr), x)
+        y_chunk[idx] += np.ravel(signal_comb)
 
-        idx = n * Nsamp + t
-        tof = tof_matrix[i, j, :]
+    return y_chunk
 
-        time_comb = np.subtract.outer(tspan, tof) * 1e-6
-        signal_comb = gausspulse(time_comb, fc=fc, bw=bw, bwr=bwr) @ x
-        y[idx] += np.ravel(signal_comb)
+def multiply_kernel(x, tspan, tof_matrix, Nel, Nsamp, fc, bw, bwr, num_processes=4):
+    N = Nel * Nel
+    indices = np.arange(N)
+    chunks = np.array_split(indices, num_processes)
+    args = [(chunk, x, tspan, tof_matrix, Nel, Nsamp, fc, bw, bwr) for chunk in chunks]
 
-    return y
+    with Pool(num_processes) as pool:
+        results = pool.map(process_chunk_multiply, args)
 
+    return np.concatenate(results).astype(np.float32)
+
+# Optimized t_multiply_kernel on CPU
 def t_multiply_kernel(x, tspan, tof_matrix, Nel, Nsamp, Npx, fc, bw, bwr):
-    y = np.zeros(Npx)
+    y = np.zeros(Npx, dtype=np.float32)
 
     for n in range(Npx):
-        tof = np.ravel(tof_matrix[:, :, n], order='C')
+        tof = tof_matrix[:, :, n].ravel(order="C")
         M = len(tof)
-
-        time_comb = np.tile(tspan, reps=(M, 1))
-        time_comb = np.array([(time_comb[i, :] - tof[i]) * 1e-6 for i in range(M)], dtype=float)
-        signal_comb = np.ravel(gausspulse(time_comb, fc=fc, bw=bw, bwr=bwr), order="C") @ x
-        y[n] = np.sum(signal_comb)
+        time_comb = np.tile(tspan, (M, 1)) - tof[:, np.newaxis]
+        time_comb *= 1e-6
+        signal_comb = gausspulse_cpu(time_comb, fc, bw, bwr)
+        signal_comb_flattened = signal_comb.ravel(order="C")
+        y[n] = np.sum(signal_comb_flattened @ x)
 
     return y
